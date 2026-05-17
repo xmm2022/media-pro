@@ -7,11 +7,12 @@ router = APIRouter(prefix="/api/playback", tags=["playback"])
 
 @router.get("/{media_id}")
 def resolve_playback(media_id: int) -> dict[str, str | int]:
-    service = PlaybackService()
+    service = PlaybackService(total_budget_ms=2000)
     decision = service.resolve(
         self_hit=None,
         donor_available=False,
         source_copy_supported=False,
         source_stream_url=f"https://openlist.local/media/{media_id}.mkv",
+        elapsed_ms=0,
     )
     return {"media_id": media_id, "route": decision.route, "stream_url": decision.stream_url}
