@@ -9,4 +9,4 @@ def test_admin_stats_endpoint_returns_route_buckets() -> None:
     response = client.get("/api/admin/stats")
 
     assert response.status_code == 200
-    assert set(response.json()) == {"self", "pool", "source_copy", "source_stream"}
+    assert response.json() == {"self": 0, "pool": 0, "source_copy": 0, "source_stream": 0}
