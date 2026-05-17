@@ -12,6 +12,8 @@ uv sync
 uv run uvicorn gateway.main:app --reload
 ```
 
+Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through the admin API. Keep `GATEWAY_DATABASE_URL` pointed at the SQLite file or database you want the gateway to manage.
+
 ## Validation
 
 ```bash

@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from threading import Lock
 
 from fastapi import FastAPI
 
@@ -17,12 +18,15 @@ def create_app(database_url: str | None = None, cookie_secret: str | None = None
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         init_schema(app.state.engine)
+        app.state.schema_initialized = True
         yield
         app.state.engine.dispose()
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.engine = make_engine(resolved_database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
+    app.state.schema_initialized = False
+    app.state.schema_init_lock = Lock()
     app.state.cookie_cipher = CookieCipher(cookie_secret or settings.cookie_secret)
     app.include_router(health_router)
     app.include_router(admin_router)

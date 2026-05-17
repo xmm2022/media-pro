@@ -15,6 +15,12 @@ def test_summarize_routes_returns_all_buckets() -> None:
     assert summary == {"self": 1, "pool": 0, "source_copy": 0, "source_stream": 2}
 
 
+def test_summarize_routes_ignores_unknown_buckets() -> None:
+    summary = summarize_routes(["self", "mystery", "source_stream"])
+
+    assert summary == {"self": 1, "pool": 0, "source_copy": 0, "source_stream": 1}
+
+
 def test_admin_stats_endpoint_returns_persisted_route_counts(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'stats.db'}"
     engine = create_engine(database_url, future=True)

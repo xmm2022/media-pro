@@ -87,6 +87,18 @@ def test_create_user_initializes_schema_for_fresh_database(tmp_path: Path) -> No
     assert response.json() == {"id": 1, "username": "alice", "status": "active"}
 
 
+def test_create_user_initializes_schema_for_plain_testclient_fresh_database(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "plain-client-fresh.db"
+    client = TestClient(create_app(database_url=f"sqlite:///{db_path}"))
+
+    response = client.post("/api/admin/users", json={"username": "alice", "status": "active"})
+
+    assert response.status_code == 201
+    assert response.json() == {"id": 1, "username": "alice", "status": "active"}
+
+
 def test_create_app_instances_can_use_independent_databases(tmp_path: Path) -> None:
     first_client = make_client(tmp_path, "first.db")
     second_client = make_client(tmp_path, "second.db")
