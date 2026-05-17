@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from gateway.api.admin import router as admin_router
 from gateway.api.health import router as health_router
+from gateway.api.playback import router as playback_router
 
 
 def create_app() -> FastAPI:
@@ -10,6 +11,7 @@ def create_app() -> FastAPI:
     app.state.admin_drives = []
     app.include_router(health_router)
     app.include_router(admin_router)
+    app.include_router(playback_router)
     return app
 
 

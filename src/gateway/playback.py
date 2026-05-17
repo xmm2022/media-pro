@@ -1,0 +1,24 @@
+from dataclasses import dataclass
+
+
+@dataclass(slots=True)
+class PlaybackDecision:
+    route: str
+    stream_url: str
+
+
+class PlaybackService:
+    def resolve(
+        self,
+        self_hit: str | None,
+        donor_available: bool,
+        source_copy_supported: bool,
+        source_stream_url: str,
+    ) -> PlaybackDecision:
+        if self_hit:
+            return PlaybackDecision(route="self", stream_url=self_hit)
+        if donor_available:
+            return PlaybackDecision(route="pool", stream_url="https://target.local/from-pool.mkv")
+        if source_copy_supported:
+            return PlaybackDecision(route="source_copy", stream_url="https://target.local/from-source-copy.mkv")
+        return PlaybackDecision(route="source_stream", stream_url=source_stream_url)
