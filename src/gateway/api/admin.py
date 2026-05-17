@@ -1,17 +1,30 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from gateway.db import get_session
-from gateway.models import User, UserDriveAccount
+from gateway.db import get_session, init_schema
+from gateway.models import PlaybackRecord, User, UserDriveAccount
 from gateway.schemas import DriveAccountCreate, DriveAccountRead, UserCreate, UserRead
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/stats")
-def admin_stats() -> dict[str, int]:
-    return {"self": 0, "pool": 0, "source_copy": 0, "source_stream": 0}
+def admin_stats(request: Request, session: Session = Depends(get_session)) -> dict[str, int]:
+    init_schema(request.app.state.engine)
+    routes = session.scalars(select(PlaybackRecord.route)).all()
+    normalized_routes = [
+        route.value if hasattr(route, "value") else str(route) for route in routes
+    ]
+    return summarize_routes(normalized_routes)
+
+
+def summarize_routes(routes: list[str]) -> dict[str, int]:
+    summary = {"self": 0, "pool": 0, "source_copy": 0, "source_stream": 0}
+    for route in routes:
+        summary[route] = summary.get(route, 0) + 1
+    return summary
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
