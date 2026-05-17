@@ -9,4 +9,8 @@ def test_playback_api_returns_source_stream_payload() -> None:
     response = client.get("/api/playback/42")
 
     assert response.status_code == 200
-    assert response.json()["route"] in {"self", "pool", "source_copy", "source_stream"}
+    assert response.json() == {
+        "media_id": 42,
+        "route": "source_stream",
+        "stream_url": "https://openlist.local/media/42.mkv",
+    }
