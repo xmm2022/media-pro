@@ -8,6 +8,14 @@ def _status_value(status: object) -> str:
     return str(status)
 
 
+def _normalize_cooldown_until(value: object) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 def recover_cooldown_status(rows: list[dict[str, object]]) -> list[str]:
     next_statuses: list[str] = []
     for row in rows:
@@ -22,10 +30,11 @@ def recover_expired_cooldowns(rows: list[dict[str, object]]) -> list[str]:
     now = datetime.now(timezone.utc)
     next_statuses: list[str] = []
     for row in rows:
+        cooldown_until = _normalize_cooldown_until(row["cooldown_until"])
         if (
             _status_value(row["status"]) == "cooldown"
-            and row["cooldown_until"]
-            and row["cooldown_until"] <= now
+            and cooldown_until
+            and cooldown_until <= now
         ):
             next_statuses.append("ready")
         else:

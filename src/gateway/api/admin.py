@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from gateway.db import get_session
@@ -12,7 +12,12 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 @router.get("/stats")
 def admin_stats(session: Session = Depends(get_session)) -> dict[str, int]:
-    routes = session.scalars(select(PlaybackRecord.route)).all()
+    try:
+        routes = session.scalars(select(PlaybackRecord.route)).all()
+    except OperationalError as exc:
+        if "no such table: playback_records" in str(exc):
+            return summarize_routes([])
+        raise
     normalized_routes = [
         route.value if hasattr(route, "value") else str(route) for route in routes
     ]
