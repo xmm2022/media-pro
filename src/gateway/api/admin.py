@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from gateway.db import get_session
@@ -17,7 +18,14 @@ def admin_stats() -> dict[str, int]:
 def create_user(payload: UserCreate, session: Session = Depends(get_session)) -> UserRead:
     user = User(username=payload.username, status=payload.status)
     session.add(user)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already exists",
+        ) from None
     session.refresh(user)
     return UserRead.model_validate(user)
 

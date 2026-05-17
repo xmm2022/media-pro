@@ -4,8 +4,6 @@ from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from gateway.models import Base
-
 
 def make_engine(database_url: str):
     return create_engine(database_url, future=True)
@@ -13,7 +11,6 @@ def make_engine(database_url: str):
 
 def make_session_factory(database_url: str):
     engine = make_engine(database_url)
-    Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
 
