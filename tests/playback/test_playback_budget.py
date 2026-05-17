@@ -14,3 +14,18 @@ def test_playback_service_falls_back_when_budget_exhausted() -> None:
 
     assert decision.route == "source_stream"
     assert decision.stream_url == "https://openlist.local/source.mkv"
+
+
+def test_playback_service_budget_exhaustion_overrides_pool_at_boundary() -> None:
+    service = PlaybackService(total_budget_ms=2000)
+
+    decision = service.resolve(
+        self_hit=None,
+        donor_available=True,
+        source_copy_supported=True,
+        source_stream_url="https://openlist.local/source.mkv",
+        elapsed_ms=2000,
+    )
+
+    assert decision.route == "source_stream"
+    assert decision.stream_url == "https://openlist.local/source.mkv"
