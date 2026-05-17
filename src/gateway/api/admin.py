@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from gateway.db import get_session, init_schema
+from gateway.db import get_session
 from gateway.models import PlaybackRecord, User, UserDriveAccount
 from gateway.schemas import DriveAccountCreate, DriveAccountRead, UserCreate, UserRead
 
@@ -11,8 +11,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/stats")
-def admin_stats(request: Request, session: Session = Depends(get_session)) -> dict[str, int]:
-    init_schema(request.app.state.engine)
+def admin_stats(session: Session = Depends(get_session)) -> dict[str, int]:
     routes = session.scalars(select(PlaybackRecord.route)).all()
     normalized_routes = [
         route.value if hasattr(route, "value") else str(route) for route in routes
