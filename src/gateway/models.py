@@ -24,6 +24,10 @@ class TransferRoute(str, Enum):
     SOURCE_STREAM = "source_stream"
 
 
+def enum_values(enum_class: type[Enum]) -> list[str]:
+    return [member.value for member in enum_class]
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -69,7 +73,13 @@ class PoolObject(Base):
     drive_type: Mapped[str] = mapped_column(String(32))
     target_path: Mapped[str] = mapped_column(String(1024))
     status: Mapped[PoolObjectStatus] = mapped_column(
-        SqlEnum(PoolObjectStatus), default=PoolObjectStatus.READY
+        SqlEnum(
+            PoolObjectStatus,
+            values_callable=enum_values,
+            native_enum=False,
+            name="pool_object_status",
+        ),
+        default=PoolObjectStatus.READY,
     )
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -95,7 +105,14 @@ class PlaybackRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     media_id: Mapped[int] = mapped_column(ForeignKey("media_items.id"), index=True)
-    route: Mapped[TransferRoute] = mapped_column(SqlEnum(TransferRoute))
+    route: Mapped[TransferRoute] = mapped_column(
+        SqlEnum(
+            TransferRoute,
+            values_callable=enum_values,
+            native_enum=False,
+            name="transfer_route",
+        )
+    )
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     latency_ms: Mapped[int] = mapped_column(Integer)
 

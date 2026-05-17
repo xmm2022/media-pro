@@ -1,9 +1,21 @@
+import os
+import sys
+from pathlib import Path
+
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_PATH = PROJECT_ROOT / "src"
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
 
 from gateway.models import Base
 
 config = context.config
+database_url = os.getenv("GATEWAY_DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 target_metadata = Base.metadata
 
 
