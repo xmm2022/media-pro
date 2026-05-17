@@ -1,18 +1,25 @@
-"""Database primitives kept available for later tasks.
+from collections.abc import Generator
 
-Task 4 admin APIs remain intentionally in-memory; persistence wiring is deferred.
-"""
-
+from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from gateway.models import Base
 
-DATABASE_URL = "sqlite:///./gateway.db"
 
-engine = create_engine(DATABASE_URL, future=True)
-SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+def make_engine(database_url: str):
+    return create_engine(database_url, future=True)
 
 
-def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
+def make_session_factory(database_url: str):
+    engine = make_engine(database_url)
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+
+
+def get_session(request: Request) -> Generator[Session, None, None]:
+    session = request.app.state.session_factory()
+    try:
+        yield session
+    finally:
+        session.close()

@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     openlist_base_url: str = Field("http://localhost:5244")
     openlist_token: str = Field("")
     rapid_copy_base_url: str = Field("http://localhost:9000")
+    database_url: str = Field("sqlite:///./gateway.db")
+    cookie_secret: str = Field("change-me-please")
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="GATEWAY_")
 

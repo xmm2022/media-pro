@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class UserCreate(BaseModel):
@@ -7,6 +7,7 @@ class UserCreate(BaseModel):
 
 
 class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     username: str
     status: str
@@ -21,6 +22,7 @@ class DriveAccountCreate(BaseModel):
 
 
 class DriveAccountRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: int
     drive_type: str

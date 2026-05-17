@@ -1,5 +1,8 @@
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
 
+from gateway.db import get_session
+from gateway.models import User, UserDriveAccount
 from gateway.schemas import DriveAccountCreate, DriveAccountRead, UserCreate, UserRead
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -11,29 +14,38 @@ def admin_stats() -> dict[str, int]:
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreate, request: Request) -> UserRead:
-    users: list[UserRead] = request.app.state.admin_users
-    user = UserRead(id=len(users) + 1, username=payload.username, status=payload.status)
-    users.append(user)
-    return user
+def create_user(payload: UserCreate, session: Session = Depends(get_session)) -> UserRead:
+    user = User(username=payload.username, status=payload.status)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return UserRead.model_validate(user)
 
 
 @router.post("/drives", response_model=DriveAccountRead, status_code=status.HTTP_201_CREATED)
-def create_drive(payload: DriveAccountCreate, request: Request) -> DriveAccountRead:
-    users: list[UserRead] = request.app.state.admin_users
-    drives: list[DriveAccountRead] = request.app.state.admin_drives
-
-    if not any(user.id == payload.user_id for user in users):
+def create_drive(
+    payload: DriveAccountCreate,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> DriveAccountRead:
+    if session.get(User, payload.user_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    preview = f"{payload.cookie[:5]}..."
-    drive = DriveAccountRead(
-        id=len(drives) + 1,
+    drive = UserDriveAccount(
+        user_id=payload.user_id,
+        drive_type=payload.drive_type,
+        cookie_encrypted=request.app.state.cookie_cipher.encrypt(payload.cookie),
+        root_dir=payload.root_dir,
+        share_pool_enabled=payload.share_pool_enabled,
+    )
+    session.add(drive)
+    session.commit()
+    session.refresh(drive)
+    return DriveAccountRead(
+        id=drive.id,
         user_id=payload.user_id,
         drive_type=payload.drive_type,
         root_dir=payload.root_dir,
         share_pool_enabled=payload.share_pool_enabled,
-        cookie_preview=preview,
+        cookie_preview=f"{payload.cookie[:5]}...",
     )
-    drives.append(drive)
-    return drive

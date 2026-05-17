@@ -1,10 +1,16 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from gateway.main import create_app
 
 
-def test_create_user_and_drive_account() -> None:
-    client = TestClient(create_app())
+def make_client(tmp_path: Path, database_name: str) -> TestClient:
+    return TestClient(create_app(database_url=f"sqlite:///{tmp_path / database_name}"))
+
+
+def test_create_user_and_drive_account(tmp_path: Path) -> None:
+    client = make_client(tmp_path, "admin-users.db")
 
     user_response = client.post("/api/admin/users", json={"username": "alice", "status": "active"})
     assert user_response.status_code == 201
@@ -26,8 +32,8 @@ def test_create_user_and_drive_account() -> None:
     assert drive_response.json()["cookie_preview"] == "UID=1..."
 
 
-def test_create_drive_rejects_unknown_user() -> None:
-    client = TestClient(create_app())
+def test_create_drive_rejects_unknown_user(tmp_path: Path) -> None:
+    client = make_client(tmp_path, "unknown-user.db")
 
     response = client.post(
         "/api/admin/drives",
@@ -44,9 +50,9 @@ def test_create_drive_rejects_unknown_user() -> None:
     assert response.json() == {"detail": "User not found"}
 
 
-def test_create_app_instances_have_independent_admin_state() -> None:
-    first_client = TestClient(create_app())
-    second_client = TestClient(create_app())
+def test_create_app_instances_can_use_independent_databases(tmp_path: Path) -> None:
+    first_client = make_client(tmp_path, "first.db")
+    second_client = make_client(tmp_path, "second.db")
 
     first_response = first_client.post("/api/admin/users", json={"username": "alice", "status": "active"})
     second_response = second_client.post("/api/admin/users", json={"username": "bob", "status": "active"})
