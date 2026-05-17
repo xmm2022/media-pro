@@ -2,15 +2,21 @@ from collections.abc import Generator
 
 from fastapi import Request
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from gateway.models import Base
 
-def make_engine(database_url: str):
+
+def make_engine(database_url: str) -> Engine:
     return create_engine(database_url, future=True)
 
 
-def make_session_factory(database_url: str):
-    engine = make_engine(database_url)
+def init_schema(engine: Engine) -> None:
+    Base.metadata.create_all(engine)
+
+
+def make_session_factory(engine: Engine):
     return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
 
