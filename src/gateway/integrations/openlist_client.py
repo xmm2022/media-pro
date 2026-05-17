@@ -4,6 +4,14 @@ import httpx
 
 
 @dataclass(slots=True)
+class CatalogRow:
+    path: str
+    size: int
+    file_id: str | None
+    mtime: str | None
+
+
+@dataclass(slots=True)
 class StreamInfo:
     raw_url: str
     content_length: int | None
@@ -27,3 +35,18 @@ class OpenListClient:
             content_length=data.get("content_length"),
             accepts_ranges=data.get("accept_ranges") == "bytes",
         )
+
+    async def list_catalog(self, root_path: str) -> list[CatalogRow]:
+        response = await self._client.post("/api/fs/list", json={"path": root_path})
+        response.raise_for_status()
+        rows = response.json()["data"]["content"]
+        return [
+            CatalogRow(
+                path=row["path"],
+                size=row["size"],
+                file_id=row.get("id"),
+                mtime=row.get("modified"),
+            )
+            for row in rows
+            if not row.get("is_dir", False)
+        ]
