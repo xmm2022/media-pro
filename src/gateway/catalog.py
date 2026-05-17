@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
@@ -11,6 +12,11 @@ class CatalogEntry:
 
 
 class CatalogService:
+    def parse_mtime(self, mtime: str | None) -> datetime | None:
+        if mtime is None:
+            return None
+        return datetime.fromisoformat(mtime.replace("Z", "+00:00"))
+
     def normalize_name(self, source_path: str) -> tuple[str, str]:
         path = Path(source_path)
         return path.stem.lower(), path.suffix.lstrip(".").lower()
@@ -24,7 +30,7 @@ class CatalogService:
             "source_path": entry.source_path,
             "source_file_id": entry.source_file_id,
             "size": entry.size,
-            "mtime": entry.mtime,
+            "mtime": self.parse_mtime(entry.mtime),
             "fingerprint": self.build_fingerprint(entry.source_path, entry.size),
             "openlist_path": entry.source_path,
         }
