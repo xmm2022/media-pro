@@ -1,3 +1,8 @@
+"""Database primitives kept available for later tasks.
+
+Task 4 admin APIs remain intentionally in-memory; persistence wiring is deferred.
+"""
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
