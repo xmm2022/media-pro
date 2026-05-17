@@ -13,6 +13,10 @@ dependencies = [
   "cryptography>=48.0.0",
 ]
 
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12"]
+build-backend = "uv_build"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3,<9",
@@ -20,6 +24,9 @@ dev = [
   "pytest-asyncio>=0.23,<0.24",
   "respx>=0.21,<0.22",
 ]
+
+[tool.uv.build-backend]
+module-name = "gateway"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
