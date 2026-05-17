@@ -5,6 +5,11 @@ from gateway.schemas import DriveAccountCreate, DriveAccountRead, UserCreate, Us
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
+@router.get("/stats")
+def admin_stats() -> dict[str, int]:
+    return {"self": 0, "pool": 0, "source_copy": 0, "source_stream": 0}
+
+
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(payload: UserCreate, request: Request) -> UserRead:
     users: list[UserRead] = request.app.state.admin_users
