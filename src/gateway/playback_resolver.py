@@ -4,7 +4,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from gateway.integrations.openlist_client import OpenListClient
-from gateway.models import MediaItem, PlaybackRecord, PoolObject, TransferRoute, User, UserDriveAccount
+from gateway.models import (
+    MediaItem,
+    PlaybackRecord,
+    PoolObject,
+    PoolObjectStatus,
+    TransferRoute,
+    User,
+    UserDriveAccount,
+)
 from gateway.playback import PlaybackDecision, PlaybackService
 
 
@@ -18,6 +26,34 @@ class PlaybackResolver:
             return None
         if candidate.startswith(("http://", "https://")):
             return candidate
+        return None
+
+    def _has_share_enabled_drive(self, session: Session, user_id: int) -> bool:
+        return session.scalar(
+            select(UserDriveAccount.id).where(
+                UserDriveAccount.user_id == user_id,
+                UserDriveAccount.enabled.is_(True),
+                UserDriveAccount.share_pool_enabled.is_(True),
+            )
+        ) is not None
+
+    def _select_donor_stream_url(self, session: Session, *, media_id: int, user_id: int) -> str | None:
+        donor_candidates = session.scalars(
+            select(PoolObject)
+            .where(
+                PoolObject.media_id == media_id,
+                PoolObject.owner_user_id != user_id,
+                PoolObject.status == PoolObjectStatus.READY,
+            )
+            .order_by(PoolObject.id)
+        ).all()
+        for candidate in donor_candidates:
+            stream_url = self._normalize_stream_url(candidate.target_path)
+            if stream_url is None:
+                continue
+            if not self._has_share_enabled_drive(session, candidate.owner_user_id):
+                continue
+            return stream_url
         return None
 
     async def resolve(self, session: Session, *, user_id: int, media_id: int) -> PlaybackDecision:
@@ -34,29 +70,12 @@ class PlaybackResolver:
                 select(PoolObject.target_path).where(
                     PoolObject.media_id == media_id,
                     PoolObject.owner_user_id == user_id,
+                    PoolObject.status == PoolObjectStatus.READY,
                 )
             )
         )
-        donor_pool = session.scalar(
-            select(PoolObject.target_path).where(
-                PoolObject.media_id == media_id,
-                PoolObject.owner_user_id != user_id,
-            )
-        )
-        donor_stream_url = self._normalize_stream_url(donor_pool)
-        donor_pool_owner_id = session.scalar(
-            select(PoolObject.owner_user_id).where(
-                PoolObject.media_id == media_id,
-                PoolObject.owner_user_id != user_id,
-            )
-        )
-        donor_available = donor_stream_url is not None and donor_pool_owner_id is not None and session.scalar(
-            select(UserDriveAccount.id).where(
-                UserDriveAccount.user_id == donor_pool_owner_id,
-                UserDriveAccount.enabled.is_(True),
-                UserDriveAccount.share_pool_enabled.is_(True),
-            )
-        ) is not None
+        donor_stream_url = self._select_donor_stream_url(session, media_id=media_id, user_id=user_id)
+        donor_available = donor_stream_url is not None
         target_drive = session.scalar(
             select(UserDriveAccount).where(
                 UserDriveAccount.user_id == user_id,
@@ -81,14 +100,18 @@ class PlaybackResolver:
             elapsed_ms=0,
         )
 
-        session.add(
-            PlaybackRecord(
-                user_id=user_id,
-                media_id=media_id,
-                route=TransferRoute(decision.route),
-                success=True,
-                latency_ms=0,
+        try:
+            session.add(
+                PlaybackRecord(
+                    user_id=user_id,
+                    media_id=media_id,
+                    route=TransferRoute(decision.route),
+                    success=True,
+                    latency_ms=0,
+                )
             )
-        )
-        session.commit()
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
         return decision
