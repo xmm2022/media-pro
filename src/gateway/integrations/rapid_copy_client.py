@@ -60,15 +60,25 @@ class RapidCopyClient:
 
         payload = self._json_payload(response)
         if response.status_code >= 400:
-            mapped_error = payload.get("error") or self._STATUS_MAP.get(
-                response.status_code,
-                "upstream_error",
-            )
+            if "error" in payload:
+                mapped_error = payload["error"]
+            else:
+                mapped_error = self._STATUS_MAP.get(
+                    response.status_code,
+                    "upstream_error",
+                )
             detail = payload.get("detail")
             return RapidCopyResult(
                 ok=False,
                 error_code=str(mapped_error),
                 detail=str(detail) if detail else None,
+            )
+
+        if "target_path" not in payload:
+            return RapidCopyResult(
+                ok=False,
+                error_code="upstream_error",
+                detail="missing target_path in rapid-copy response",
             )
 
         return RapidCopyResult(
