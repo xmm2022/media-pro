@@ -1,18 +1,34 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
+from gateway.config import settings
+from gateway.db import get_session
+from gateway.integrations.openlist_client import OpenListClient
 from gateway.playback import PlaybackService
+from gateway.playback_resolver import PlaybackResolver
 
 router = APIRouter(prefix="/api/playback", tags=["playback"])
 
 
 @router.get("/{media_id}")
-def resolve_playback(media_id: int) -> dict[str, str | int]:
-    service = PlaybackService(total_budget_ms=2000)
-    decision = service.resolve(
-        self_hit=None,
-        donor_available=False,
-        source_copy_supported=False,
-        source_stream_url=f"https://openlist.local/media/{media_id}.mkv",
-        elapsed_ms=0,
-    )
-    return {"media_id": media_id, "route": decision.route, "stream_url": decision.stream_url}
+async def resolve_playback(
+    media_id: int,
+    user_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, str | int]:
+    client = OpenListClient(settings.openlist_base_url, settings.openlist_token)
+    resolver = PlaybackResolver(PlaybackService(total_budget_ms=2000), client)
+    try:
+        try:
+            decision = await resolver.resolve(session, user_id=user_id, media_id=media_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+    finally:
+        await client.aclose()
+
+    return {
+        "user_id": user_id,
+        "media_id": media_id,
+        "route": decision.route,
+        "stream_url": decision.stream_url,
+    }

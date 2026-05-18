@@ -3,9 +3,20 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from gateway.catalog import CatalogService
+from gateway.catalog_sync import CatalogSyncService
+from gateway.config import settings
 from gateway.db import get_session
+from gateway.integrations.openlist_client import OpenListClient
 from gateway.models import PlaybackRecord, User, UserDriveAccount
-from gateway.schemas import DriveAccountCreate, DriveAccountRead, UserCreate, UserRead
+from gateway.schemas import (
+    CatalogSyncRequest,
+    CatalogSyncResponse,
+    DriveAccountCreate,
+    DriveAccountRead,
+    UserCreate,
+    UserRead,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -25,6 +36,20 @@ def summarize_routes(routes: list[str]) -> dict[str, int]:
         if route in summary:
             summary[route] += 1
     return summary
+
+
+@router.post("/catalog/sync", response_model=CatalogSyncResponse)
+async def sync_catalog(
+    payload: CatalogSyncRequest,
+    session: Session = Depends(get_session),
+) -> CatalogSyncResponse:
+    client = OpenListClient(settings.openlist_base_url, settings.openlist_token)
+    service = CatalogSyncService(CatalogService(), client)
+    try:
+        summary = await service.sync_root(session, payload.root_path)
+    finally:
+        await client.aclose()
+    return CatalogSyncResponse(created=summary.created, updated=summary.updated)
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)

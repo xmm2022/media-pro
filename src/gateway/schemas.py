@@ -1,6 +1,15 @@
 from pydantic import BaseModel, ConfigDict
 
 
+class CatalogSyncRequest(BaseModel):
+    root_path: str
+
+
+class CatalogSyncResponse(BaseModel):
+    created: int
+    updated: int
+
+
 class UserCreate(BaseModel):
     username: str
     status: str = "active"

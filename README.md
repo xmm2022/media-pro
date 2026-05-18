@@ -68,6 +68,7 @@ src/gateway/
 scripts/
   validate_openlist_stream.py
   validate_rapid_copy.py
+  verify_real_integration.py
   verify_mvp.py
 
 tests/
@@ -113,8 +114,30 @@ uv run uvicorn gateway.main:app --reload
   - OpenList Token
 - `GATEWAY_RAPID_COPY_BASE_URL`
   - rapid-copy 服务地址
+- `GATEWAY_OPENLIST_PROBE_PATH`
+  - `validate_openlist_stream.py` 使用的真实媒体探针路径
+- `GATEWAY_CATALOG_ROOT_PATH`
+  - 给后续 catalog sync 使用的根目录；当前两个探针脚本不会直接消费它
+- `GATEWAY_RAPID_COPY_DONOR_COOKIE`
+  - rapid-copy 验证脚本使用的 donor cookie
+- `GATEWAY_RAPID_COPY_TARGET_COOKIE`
+  - rapid-copy 验证脚本使用的 target cookie
+- `GATEWAY_RAPID_COPY_SOURCE_PATH`
+  - rapid-copy 验证脚本使用的源路径
+- `GATEWAY_RAPID_COPY_TARGET_PATH`
+  - rapid-copy 验证脚本使用的目标路径
 
 Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through the admin API. Keep `GATEWAY_DATABASE_URL` pointed at the SQLite file or database you want the gateway to manage.
+
+## 真实联调必填变量
+
+- `GATEWAY_OPENLIST_PROBE_PATH`
+- `GATEWAY_CATALOG_ROOT_PATH`
+  - 给后续 catalog sync 使用，当前 `validate_openlist_stream.py` / `validate_rapid_copy.py` 不直接读取它
+- `GATEWAY_RAPID_COPY_DONOR_COOKIE`
+- `GATEWAY_RAPID_COPY_TARGET_COOKIE`
+- `GATEWAY_RAPID_COPY_SOURCE_PATH`
+- `GATEWAY_RAPID_COPY_TARGET_PATH`
 
 ## 当前接口说明
 
@@ -201,8 +224,21 @@ uv run python scripts/verify_mvp.py
 ```bash
 uv run python scripts/validate_openlist_stream.py
 uv run python scripts/validate_rapid_copy.py
+uv run python scripts/verify_real_integration.py
 uv run python scripts/verify_mvp.py
 ```
+
+## 真实环境联调步骤
+
+在 `.env` 中先填好真实的 `GATEWAY_OPENLIST_*`、`GATEWAY_CATALOG_ROOT_PATH` 和 `GATEWAY_RAPID_COPY_*` 变量，然后按下面顺序执行：
+
+```bash
+uv run python scripts/validate_openlist_stream.py
+uv run python scripts/validate_rapid_copy.py
+uv run python scripts/verify_real_integration.py
+```
+
+`verify_real_integration.py` 会串联 catalog sync、playback resolve、rapid-copy probe，并打印一个至少包含 `sync`、`playback`、`rapid_copy`、`stats` 四个键的摘要。确认这四个键都出现且结果符合预期后，再去验收 `GET /api/playback/{media_id}` 与 `GET /api/admin/stats`。
 
 ## 当前项目进度
 
@@ -269,4 +305,3 @@ uv run python scripts/verify_mvp.py
 ## 仓库位置
 
 - GitHub: `https://github.com/xmm2022/media-pro`
-

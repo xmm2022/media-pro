@@ -8,11 +8,49 @@ class RapidCopyResult:
     ok: bool
     error_code: str | None
     target_path: str | None = None
+    detail: str | None = None
 
 
 class RapidCopyClient:
+    _STATUS_MAP = {
+        400: "invalid_request",
+        401: "permission_denied",
+        403: "permission_denied",
+        404: "endpoint_not_found",
+        409: "target_conflict",
+        422: "invalid_request",
+    }
+
     def __init__(self, base_url: str) -> None:
         self._client = httpx.AsyncClient(base_url=base_url, timeout=2.0)
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    def _json_payload(self, response: httpx.Response) -> dict[str, object]:
+        try:
+            payload = response.json()
+        except ValueError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _mapped_error_code(self, status_code: int, payload: dict[str, object]) -> str:
+        error = payload.get("error")
+        if isinstance(error, str) and error:
+            return error
+        return self._STATUS_MAP.get(status_code, "upstream_error")
+
+    def _error_detail(self, payload: dict[str, object]) -> str | None:
+        detail = payload.get("detail")
+        if isinstance(detail, str) and detail:
+            return detail
+        if "error" not in payload:
+            return None
+
+        error = payload["error"]
+        if error in ("", None):
+            return None
+        return f"invalid upstream error field: {error!r}"
 
     async def copy(
         self,
@@ -21,19 +59,47 @@ class RapidCopyClient:
         source_path: str,
         target_path: str,
     ) -> RapidCopyResult:
-        response = await self._client.post(
-            "/copy",
-            json={
-                "donor_cookie": donor_cookie,
-                "target_cookie": target_cookie,
-                "source_path": source_path,
-                "target_path": target_path,
-            },
-        )
+        try:
+            response = await self._client.post(
+                "/copy",
+                json={
+                    "donor_cookie": donor_cookie,
+                    "target_cookie": target_cookie,
+                    "source_path": source_path,
+                    "target_path": target_path,
+                },
+            )
+        except httpx.HTTPError as exc:
+            return RapidCopyResult(
+                ok=False,
+                error_code="service_unreachable",
+                detail=str(exc),
+            )
+
+        payload = self._json_payload(response)
         if response.status_code >= 400:
-            return RapidCopyResult(ok=False, error_code=response.json()["error"])
+            return RapidCopyResult(
+                ok=False,
+                error_code=self._mapped_error_code(response.status_code, payload),
+                detail=self._error_detail(payload),
+            )
+
+        if "target_path" not in payload:
+            return RapidCopyResult(
+                ok=False,
+                error_code="upstream_error",
+                detail="missing target_path in rapid-copy response",
+            )
+        target_path_value = payload["target_path"]
+        if not isinstance(target_path_value, str) or not target_path_value:
+            return RapidCopyResult(
+                ok=False,
+                error_code="upstream_error",
+                detail="invalid target_path in rapid-copy response",
+            )
+
         return RapidCopyResult(
             ok=True,
             error_code=None,
-            target_path=response.json()["target_path"],
+            target_path=target_path_value,
         )
