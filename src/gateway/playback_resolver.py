@@ -13,6 +13,13 @@ class PlaybackResolver:
         self._playback_service = playback_service
         self._openlist_client = openlist_client
 
+    def _normalize_stream_url(self, candidate: str | None) -> str | None:
+        if candidate is None:
+            return None
+        if candidate.startswith(("http://", "https://")):
+            return candidate
+        return None
+
     async def resolve(self, session: Session, *, user_id: int, media_id: int) -> PlaybackDecision:
         user = session.get(User, user_id)
         if user is None:
@@ -22,21 +29,30 @@ class PlaybackResolver:
         if media is None:
             raise LookupError(f"media {media_id} not found")
 
-        self_hit = session.scalar(
-            select(PoolObject.target_path).where(
-                PoolObject.media_id == media_id,
-                PoolObject.owner_user_id == user_id,
+        self_hit = self._normalize_stream_url(
+            session.scalar(
+                select(PoolObject.target_path).where(
+                    PoolObject.media_id == media_id,
+                    PoolObject.owner_user_id == user_id,
+                )
             )
         )
         donor_pool = session.scalar(
-            select(PoolObject).where(
+            select(PoolObject.target_path).where(
                 PoolObject.media_id == media_id,
                 PoolObject.owner_user_id != user_id,
             )
         )
-        donor_available = donor_pool is not None and session.scalar(
+        donor_stream_url = self._normalize_stream_url(donor_pool)
+        donor_pool_owner_id = session.scalar(
+            select(PoolObject.owner_user_id).where(
+                PoolObject.media_id == media_id,
+                PoolObject.owner_user_id != user_id,
+            )
+        )
+        donor_available = donor_stream_url is not None and donor_pool_owner_id is not None and session.scalar(
             select(UserDriveAccount.id).where(
-                UserDriveAccount.user_id == donor_pool.owner_user_id,
+                UserDriveAccount.user_id == donor_pool_owner_id,
                 UserDriveAccount.enabled.is_(True),
                 UserDriveAccount.share_pool_enabled.is_(True),
             )
@@ -50,7 +66,7 @@ class PlaybackResolver:
 
         source_copy_stream_url = None
         if target_drive is not None:
-            source_copy_stream_url = (
+            source_copy_stream_url = self._normalize_stream_url(
                 f"{target_drive.root_dir.rstrip('/')}/{PurePosixPath(media.source_path).name}"
             )
 
@@ -58,9 +74,9 @@ class PlaybackResolver:
         decision = self._playback_service.resolve(
             self_hit=self_hit,
             donor_available=donor_available,
-            source_copy_supported=target_drive is not None,
+            source_copy_supported=source_copy_stream_url is not None,
             source_stream_url=stream_info.raw_url,
-            pool_stream_url=donor_pool.target_path if donor_pool is not None else None,
+            pool_stream_url=donor_stream_url,
             source_copy_stream_url=source_copy_stream_url,
             elapsed_ms=0,
         )
