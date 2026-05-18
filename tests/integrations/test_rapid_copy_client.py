@@ -177,6 +177,26 @@ async def test_rapid_copy_client_handles_non_dict_json_error_payload() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_rapid_copy_client_handles_invalid_json_error_payload() -> None:
+    respx.post("http://rapid-copy.local/copy").mock(
+        return_value=httpx.Response(422, text="not-json", headers={"content-type": "text/plain"})
+    )
+
+    client = RapidCopyClient("http://rapid-copy.local")
+    result = await client.copy(
+        donor_cookie="cookie-a",
+        target_cookie="cookie-b",
+        source_path="/Movies/movie.mkv",
+        target_path="/EmbyCache/movie.mkv",
+    )
+
+    assert result.ok is False
+    assert result.error_code == "invalid_request"
+    assert result.detail is None
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_rapid_copy_client_maps_connect_error_to_service_unreachable() -> None:
     respx.post("http://rapid-copy.local/copy").mock(
         side_effect=httpx.ConnectError("rapid-copy offline")
