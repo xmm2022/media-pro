@@ -116,7 +116,7 @@ uv run uvicorn gateway.main:app --reload
 - `GATEWAY_OPENLIST_PROBE_PATH`
   - `validate_openlist_stream.py` 使用的真实媒体探针路径
 - `GATEWAY_CATALOG_ROOT_PATH`
-  - 真实联调时的 catalog 根目录
+  - 给后续 catalog sync 使用的根目录；当前两个探针脚本不会直接消费它
 - `GATEWAY_RAPID_COPY_DONOR_COOKIE`
   - rapid-copy 验证脚本使用的 donor cookie
 - `GATEWAY_RAPID_COPY_TARGET_COOKIE`
@@ -132,6 +132,7 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 
 - `GATEWAY_OPENLIST_PROBE_PATH`
 - `GATEWAY_CATALOG_ROOT_PATH`
+  - 给后续 catalog sync 使用，当前 `validate_openlist_stream.py` / `validate_rapid_copy.py` 不直接读取它
 - `GATEWAY_RAPID_COPY_DONOR_COOKIE`
 - `GATEWAY_RAPID_COPY_TARGET_COOKIE`
 - `GATEWAY_RAPID_COPY_SOURCE_PATH`
