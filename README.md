@@ -113,8 +113,29 @@ uv run uvicorn gateway.main:app --reload
   - OpenList Token
 - `GATEWAY_RAPID_COPY_BASE_URL`
   - rapid-copy 服务地址
+- `GATEWAY_OPENLIST_PROBE_PATH`
+  - `validate_openlist_stream.py` 使用的真实媒体探针路径
+- `GATEWAY_CATALOG_ROOT_PATH`
+  - 真实联调时的 catalog 根目录
+- `GATEWAY_RAPID_COPY_DONOR_COOKIE`
+  - rapid-copy 验证脚本使用的 donor cookie
+- `GATEWAY_RAPID_COPY_TARGET_COOKIE`
+  - rapid-copy 验证脚本使用的 target cookie
+- `GATEWAY_RAPID_COPY_SOURCE_PATH`
+  - rapid-copy 验证脚本使用的源路径
+- `GATEWAY_RAPID_COPY_TARGET_PATH`
+  - rapid-copy 验证脚本使用的目标路径
 
 Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through the admin API. Keep `GATEWAY_DATABASE_URL` pointed at the SQLite file or database you want the gateway to manage.
+
+## 真实联调必填变量
+
+- `GATEWAY_OPENLIST_PROBE_PATH`
+- `GATEWAY_CATALOG_ROOT_PATH`
+- `GATEWAY_RAPID_COPY_DONOR_COOKIE`
+- `GATEWAY_RAPID_COPY_TARGET_COOKIE`
+- `GATEWAY_RAPID_COPY_SOURCE_PATH`
+- `GATEWAY_RAPID_COPY_TARGET_PATH`
 
 ## 当前接口说明
 
@@ -269,4 +290,3 @@ uv run python scripts/verify_mvp.py
 ## 仓库位置
 
 - GitHub: `https://github.com/xmm2022/media-pro`
-
