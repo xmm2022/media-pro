@@ -40,5 +40,9 @@ class CatalogSyncService:
             for field_name, value in payload.items():
                 setattr(media, field_name, value)
             updated += 1
-        session.commit()
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
         return CatalogSyncSummary(created=created, updated=updated)
