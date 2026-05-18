@@ -68,6 +68,7 @@ src/gateway/
 scripts/
   validate_openlist_stream.py
   validate_rapid_copy.py
+  verify_real_integration.py
   verify_mvp.py
 
 tests/
@@ -223,8 +224,21 @@ uv run python scripts/verify_mvp.py
 ```bash
 uv run python scripts/validate_openlist_stream.py
 uv run python scripts/validate_rapid_copy.py
+uv run python scripts/verify_real_integration.py
 uv run python scripts/verify_mvp.py
 ```
+
+## 真实环境联调步骤
+
+在 `.env` 中先填好真实的 `GATEWAY_OPENLIST_*`、`GATEWAY_CATALOG_ROOT_PATH` 和 `GATEWAY_RAPID_COPY_*` 变量，然后按下面顺序执行：
+
+```bash
+uv run python scripts/validate_openlist_stream.py
+uv run python scripts/validate_rapid_copy.py
+uv run python scripts/verify_real_integration.py
+```
+
+`verify_real_integration.py` 会串联 catalog sync、playback resolve、rapid-copy probe，并打印一个至少包含 `sync`、`playback`、`rapid_copy`、`stats` 四个键的摘要。确认这四个键都出现且结果符合预期后，再去验收 `GET /api/playback/{media_id}` 与 `GET /api/admin/stats`。
 
 ## 当前项目进度
 
