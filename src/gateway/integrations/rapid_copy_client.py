@@ -34,6 +34,24 @@ class RapidCopyClient:
             return {}
         return payload if isinstance(payload, dict) else {}
 
+    def _mapped_error_code(self, status_code: int, payload: dict[str, object]) -> str:
+        error = payload.get("error")
+        if isinstance(error, str) and error:
+            return error
+        return self._STATUS_MAP.get(status_code, "upstream_error")
+
+    def _error_detail(self, payload: dict[str, object]) -> str | None:
+        detail = payload.get("detail")
+        if isinstance(detail, str) and detail:
+            return detail
+        if "error" not in payload:
+            return None
+
+        error = payload["error"]
+        if error in ("", None):
+            return None
+        return f"invalid upstream error field: {error!r}"
+
     async def copy(
         self,
         donor_cookie: str,
@@ -60,18 +78,10 @@ class RapidCopyClient:
 
         payload = self._json_payload(response)
         if response.status_code >= 400:
-            if "error" in payload:
-                mapped_error = payload["error"]
-            else:
-                mapped_error = self._STATUS_MAP.get(
-                    response.status_code,
-                    "upstream_error",
-                )
-            detail = payload.get("detail")
             return RapidCopyResult(
                 ok=False,
-                error_code=str(mapped_error),
-                detail=str(detail) if detail else None,
+                error_code=self._mapped_error_code(response.status_code, payload),
+                detail=self._error_detail(payload),
             )
 
         if "target_path" not in payload:
@@ -80,9 +90,16 @@ class RapidCopyClient:
                 error_code="upstream_error",
                 detail="missing target_path in rapid-copy response",
             )
+        target_path_value = payload["target_path"]
+        if not isinstance(target_path_value, str) or not target_path_value:
+            return RapidCopyResult(
+                ok=False,
+                error_code="upstream_error",
+                detail="invalid target_path in rapid-copy response",
+            )
 
         return RapidCopyResult(
             ok=True,
             error_code=None,
-            target_path=str(payload["target_path"]),
+            target_path=target_path_value,
         )
