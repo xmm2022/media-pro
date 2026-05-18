@@ -37,6 +37,22 @@ class PlaybackResolver:
             )
         ) is not None
 
+    def _select_self_stream_url(self, session: Session, *, media_id: int, user_id: int) -> str | None:
+        self_candidates = session.scalars(
+            select(PoolObject.target_path)
+            .where(
+                PoolObject.media_id == media_id,
+                PoolObject.owner_user_id == user_id,
+                PoolObject.status == PoolObjectStatus.READY,
+            )
+            .order_by(PoolObject.id)
+        ).all()
+        for candidate in self_candidates:
+            stream_url = self._normalize_stream_url(candidate)
+            if stream_url is not None:
+                return stream_url
+        return None
+
     def _select_donor_stream_url(self, session: Session, *, media_id: int, user_id: int) -> str | None:
         donor_candidates = session.scalars(
             select(PoolObject)
@@ -65,15 +81,7 @@ class PlaybackResolver:
         if media is None:
             raise LookupError(f"media {media_id} not found")
 
-        self_hit = self._normalize_stream_url(
-            session.scalar(
-                select(PoolObject.target_path).where(
-                    PoolObject.media_id == media_id,
-                    PoolObject.owner_user_id == user_id,
-                    PoolObject.status == PoolObjectStatus.READY,
-                )
-            )
-        )
+        self_hit = self._select_self_stream_url(session, media_id=media_id, user_id=user_id)
         donor_stream_url = self._select_donor_stream_url(session, media_id=media_id, user_id=user_id)
         donor_available = donor_stream_url is not None
         target_drive = session.scalar(

@@ -124,6 +124,56 @@ async def test_playback_resolver_ignores_local_paths_and_returns_openlist_stream
 
 
 @pytest.mark.asyncio
+async def test_playback_resolver_selects_first_ready_self_candidate_with_real_url(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'playback-self.db'}"
+    engine = create_engine(database_url, future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        user = User(username="alice")
+        media = MediaItem(
+            source_path="/Movies/Movie.2024.mkv",
+            source_file_id="gd-1",
+            size=2048,
+            fingerprint="2048:movie.2024:mkv",
+            openlist_path="/Movies/Movie.2024.mkv",
+        )
+        session.add_all([user, media])
+        session.commit()
+
+        session.add_all(
+            [
+                PoolObject(
+                    media_id=media.id,
+                    owner_user_id=user.id,
+                    drive_type="115",
+                    target_path="/EmbyCache/alice/Movie.2024.mkv",
+                    status=PoolObjectStatus.READY,
+                ),
+                PoolObject(
+                    media_id=media.id,
+                    owner_user_id=user.id,
+                    drive_type="115",
+                    target_path="https://target.local/alice.mkv",
+                    status=PoolObjectStatus.READY,
+                ),
+            ]
+        )
+        session.commit()
+
+        result = await PlaybackResolver(PlaybackService(), StubOpenListClient()).resolve(
+            session,
+            user_id=user.id,
+            media_id=media.id,
+        )
+
+    assert result.route == "self"
+    assert result.stream_url == "https://target.local/alice.mkv"
+
+
+@pytest.mark.asyncio
 async def test_playback_resolver_selects_first_share_enabled_ready_donor_with_real_url(
     tmp_path: Path,
 ) -> None:
