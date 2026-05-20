@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     rapid_copy_base_url: str = Field("http://localhost:9000")
     database_url: str = Field("sqlite:///./gateway.db")
     cookie_secret: str = Field("change-me-please")
+    openlist_probe_path: str = Field("/Movies/sample.mkv")
+    catalog_root_path: str = Field("/Movies")
+    rapid_copy_donor_cookie: str = Field("")
+    rapid_copy_target_cookie: str = Field("")
+    rapid_copy_source_path: str = Field("/Movies/sample.mkv")
+    rapid_copy_target_path: str = Field("/EmbyCache/sample.mkv")
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="GATEWAY_")
 

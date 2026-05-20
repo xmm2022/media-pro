@@ -11,6 +11,7 @@ dependencies = [
   "sqlalchemy>=2.0.49",
   "alembic>=1.18.4",
   "cryptography>=48.0.0",
+  "p115client>=0.0.8.4.8",
 ]
 
 [build-system]

@@ -26,6 +26,6 @@ def test_verify_mvp_script_runs_and_reports_expected_output() -> None:
 
     assert output == {
         "health": 200,
-        "playback_route": "source_stream",
+        "playback_route": "source_copy",
         "stats_keys": ["pool", "self", "source_copy", "source_stream"],
     }

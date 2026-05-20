@@ -22,9 +22,10 @@ def test_playback_service_uses_pool_when_self_hit_is_absent() -> None:
         donor_available=True,
         source_copy_supported=True,
         source_stream_url="https://openlist.local/source.mkv",
+        pool_stream_url="https://target.local/pool.mkv",
     )
 
-    assert decision == PlaybackDecision(route="pool", stream_url="https://target.local/from-pool.mkv")
+    assert decision == PlaybackDecision(route="pool", stream_url="https://target.local/pool.mkv")
 
 
 def test_playback_service_uses_source_copy_when_self_and_pool_are_unavailable() -> None:
@@ -35,11 +36,12 @@ def test_playback_service_uses_source_copy_when_self_and_pool_are_unavailable() 
         donor_available=False,
         source_copy_supported=True,
         source_stream_url="https://openlist.local/source.mkv",
+        source_copy_stream_url="https://target.local/source-copy.mkv",
     )
 
     assert decision == PlaybackDecision(
         route="source_copy",
-        stream_url="https://target.local/from-source-copy.mkv",
+        stream_url="https://target.local/source-copy.mkv",
     )
 
 

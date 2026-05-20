@@ -1,7 +1,8 @@
 import base64
 import hashlib
+import json
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 
 class CookieCipher:
@@ -14,3 +15,25 @@ class CookieCipher:
 
     def decrypt(self, value: str) -> str:
         return self._fernet.decrypt(value.encode()).decode()
+
+
+class PlaybackTokenCipher:
+    def __init__(self, secret: str) -> None:
+        key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+        self._fernet = Fernet(key)
+
+    def issue(self, *, user_id: int, media_id: int) -> str:
+        payload = json.dumps({"user_id": user_id, "media_id": media_id}, separators=(",", ":"))
+        return self._fernet.encrypt(payload.encode()).decode()
+
+    def verify(self, token: str, *, ttl_seconds: int = 3600) -> dict[str, int]:
+        try:
+            payload = self._fernet.decrypt(token.encode(), ttl=ttl_seconds)
+        except InvalidToken as exc:
+            raise ValueError("invalid playback token") from exc
+        data = json.loads(payload.decode())
+        user_id = data.get("user_id")
+        media_id = data.get("media_id")
+        if not isinstance(user_id, int) or not isinstance(media_id, int):
+            raise ValueError("invalid playback token")
+        return {"user_id": user_id, "media_id": media_id}

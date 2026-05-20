@@ -23,6 +23,7 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 - SQLAlchemy 模型、Alembic 迁移、SQLite 持久化
 - Drive cookie 加密存储
 - 管理员用户与 drive 录入接口
+- pool object 健康状态查询与手动恢复接口
 - 播放路由状态机
 - transfer idempotency key 生成
 - 播放预算控制
@@ -91,9 +92,27 @@ uv run uvicorn gateway.main:app --reload
 
 - `GET /health`
 - `POST /api/admin/users`
+- `GET /api/admin/drives`
 - `POST /api/admin/drives`
+- `POST /api/admin/drives/{drive_id}/probe`
+- `POST /api/admin/drives/probe`
+- `POST /api/admin/drives/disable`
+- `POST /api/admin/drives/enable`
+- `POST /api/admin/drives/delete`
+- `PATCH /api/admin/drives/{drive_id}`
+- `DELETE /api/admin/drives/{drive_id}`
+- `POST /api/admin/catalog/sync`
 - `GET /api/admin/stats`
+- `GET /api/admin/overview`
+- `GET /api/admin/drives/stats`
+- `GET /api/admin/pool-objects`
+- `GET /api/admin/pool-objects/stats`
+- `POST /api/admin/pool-objects/recover`
+- `POST /api/admin/pool-objects/disable`
+- `POST /api/admin/pool-objects/enable`
+- `POST /api/admin/pool-objects/{pool_object_id}/recover`
 - `GET /api/playback/{media_id}`
+- `GET /api/playback/{media_id}/stream`
 
 ## 环境变量说明
 
@@ -113,6 +132,18 @@ uv run uvicorn gateway.main:app --reload
   - OpenList Token
 - `GATEWAY_RAPID_COPY_BASE_URL`
   - rapid-copy 服务地址
+- `GATEWAY_OPENLIST_PROBE_PATH`
+  - OpenList 实际探针文件路径
+- `GATEWAY_CATALOG_ROOT_PATH`
+  - catalog sync 读取的 OpenList 根目录
+- `GATEWAY_RAPID_COPY_DONOR_COOKIE`
+  - `pool / P2P` 探针 donor `115` cookie
+- `GATEWAY_RAPID_COPY_TARGET_COOKIE`
+  - `pool / P2P` 与 `source_copy / O2P` 共用的 target `115` cookie
+- `GATEWAY_RAPID_COPY_SOURCE_PATH`
+  - `pool / P2P` 或 `source_copy / O2P` 的源路径
+- `GATEWAY_RAPID_COPY_TARGET_PATH`
+  - `pool / P2P` 或 `source_copy / O2P` 的目标路径
 
 Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through the admin API. Keep `GATEWAY_DATABASE_URL` pointed at the SQLite file or database you want the gateway to manage.
 
@@ -155,6 +186,234 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 }
 ```
 
+返回里会包含当前 donor 运维常用字段：
+
+- `enabled`
+- `share_pool_enabled`
+- `health_status`
+- `last_checked_at`
+- `cookie_preview`
+
+### `POST /api/admin/drives/{drive_id}/probe`
+
+对单个 drive 执行一次手动探活，并回写：
+
+- `health_status`
+- `last_checked_at`
+
+当前探活策略：
+
+- `115`
+  - 校验 cookie 是否还能拿到 `upload_info.userkey`
+  - 校验或创建 `root_dir`，确认目标缓存目录可用
+- `alist`
+  - 通过 OpenList 列举 `root_dir`，确认路径仍可访问
+
+返回示例：
+
+```json
+{
+  "ok": true,
+  "error_code": null,
+  "detail": null,
+  "drive": {
+    "id": 7,
+    "user_id": 3,
+    "drive_type": "115",
+    "root_dir": "/EmbyCache/alice",
+    "enabled": true,
+    "share_pool_enabled": false,
+    "health_status": "healthy",
+    "last_checked_at": "2026-05-20T11:00:00Z",
+    "cookie_preview": "UID=a..."
+  }
+}
+```
+
+常见失败状态：
+
+- `invalid_cookie`
+- `root_dir_unavailable`
+- `openlist_auth_failed`
+- `openlist_http_error`
+- `probe_failed`
+- `unsupported_drive_type`
+
+### `POST /api/admin/drives/probe`
+
+按选择器批量执行 drive 探活。支持的选择器：
+
+- `ids`
+- `user_id`
+- `drive_type`
+- `enabled`
+- `share_pool_enabled`
+
+这条接口适合在真实多账号联调前，一次性刷新整批 donor 的健康状态。
+
+请求示例：
+
+```json
+{
+  "enabled": true
+}
+```
+
+返回示例：
+
+```json
+{
+  "matched": 2,
+  "healthy": 1,
+  "unhealthy": 1,
+  "drive_ids": [1, 2],
+  "results": [
+    {
+      "ok": true,
+      "error_code": null,
+      "detail": null,
+      "drive": {
+        "id": 1,
+        "user_id": 1,
+        "drive_type": "115",
+        "root_dir": "/EmbyCache/alice",
+        "enabled": true,
+        "share_pool_enabled": true,
+        "health_status": "healthy",
+        "last_checked_at": "2026-05-20T11:10:00Z",
+        "cookie_preview": "UID=a..."
+      }
+    },
+    {
+      "ok": false,
+      "error_code": "invalid_cookie",
+      "detail": "cookie expired",
+      "drive": {
+        "id": 2,
+        "user_id": 2,
+        "drive_type": "115",
+        "root_dir": "/EmbyCache/bob",
+        "enabled": true,
+        "share_pool_enabled": false,
+        "health_status": "invalid_cookie",
+        "last_checked_at": "2026-05-20T11:10:00Z",
+        "cookie_preview": "UID=b..."
+      }
+    }
+  ]
+}
+```
+
+### `GET /api/admin/drives`
+
+列出当前所有 drive 账号，并支持按以下参数过滤：
+
+- `user_id`
+- `drive_type`
+- `enabled`
+- `share_pool_enabled`
+
+这条接口适合用来查看当前哪些 115 账号已启用、哪些账号开放了 pool 共享。
+
+### `PATCH /api/admin/drives/{drive_id}`
+
+更新单个 drive 账号的运维字段。当前支持：
+
+- `cookie`
+- `root_dir`
+- `enabled`
+- `share_pool_enabled`
+- `health_status`
+
+请求示例：
+
+```json
+{
+  "enabled": false,
+  "share_pool_enabled": false,
+  "health_status": "cooldown"
+}
+```
+
+这条接口主要用于 donor 账号级别的开关和维护，不需要去直接改数据库。
+
+当前联动规则：
+
+- `enabled=false`
+  - 自动把该 drive `root_dir` 下的 pool objects 标记为 `disabled`
+- `enabled=true`
+  - 自动把该 drive `root_dir` 下已 `disabled` 的 pool objects 恢复为 `ready`
+- `root_dir` 变更
+  - 自动把旧 `root_dir` 下的 pool objects 标记为 `disabled`
+- `share_pool_enabled`
+  - 只影响 donor 是否参与池共享，不改 pool object 状态
+
+### `POST /api/admin/drives/disable`
+
+按选择器批量停用 drive。支持的选择器：
+
+- `ids`
+- `user_id`
+- `drive_type`
+- `enabled`
+- `share_pool_enabled`
+
+当前行为：
+
+- 将选中的 drive 批量设为 `enabled=false`
+- 自动停用这些 drive `root_dir` 下的 pool objects
+
+### `POST /api/admin/drives/enable`
+
+按选择器批量启用 drive。
+
+当前行为：
+
+- 将选中的 drive 批量设为 `enabled=true`
+- 自动恢复这些 drive `root_dir` 下已 `disabled` 的 pool objects
+
+### `POST /api/admin/drives/delete`
+
+按选择器批量删除 drive。
+
+当前行为：
+
+- 先停用这些 drive `root_dir` 下的 pool objects
+- 再删除 drive 记录本身
+- 返回命中的 `drive_ids` 和联动修改的 pool object 数量
+
+### `DELETE /api/admin/drives/{drive_id}`
+
+删除一个 drive 账号记录。
+
+当前行为：
+
+- 先把该 drive `root_dir` 下的 pool objects 标记为 `disabled`
+- 再删除 drive 账号本身
+- 返回本次联动停用的 pool object 数量
+
+返回示例：
+
+```json
+{
+  "drive_id": 7,
+  "user_id": 3,
+  "disabled_pool_objects": 12
+}
+```
+
+### `POST /api/admin/catalog/sync`
+
+从 OpenList 根目录同步媒体目录到本地 `media_items`。
+
+请求示例：
+
+```json
+{
+  "root_path": "/Movies"
+}
+```
+
 ### `GET /api/admin/stats`
 
 返回当前 playback route 的统计桶：
@@ -168,19 +427,266 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 }
 ```
 
-### `GET /api/playback/{media_id}`
+### `GET /api/admin/overview`
 
-按当前 MVP 逻辑返回一个播放决策结果。
+返回管理首页可直接消费的总览数据：
+
+- `routes`
+  - playback route 统计桶
+- `drives.stats`
+  - drive 聚合统计
+- `drives.attention_total`
+  - 需要关注的 drive 数量，当前规则是 `enabled=false` 或 `health_status != healthy`
+- `drives.probe_error_distribution`
+  - 最近已探活且结果非 `healthy` 的错误分布
+- `drives.stale_probe_count`
+  - `last_checked_at` 为空，或早于阈值的 drive 数量
+- `drives.stale_probe_threshold_hours`
+  - 计算 `stale_probe_count` 时使用的小时阈值
+- `drives.items`
+  - 默认最多返回前 `10` 条需要关注的 drive，可通过 `drive_limit` 调整
+- `pool_objects.stats`
+  - pool objects 聚合统计
+- `pool_objects.attention_total`
+  - 当前 `status != ready` 的对象数量
+- `pool_objects.items`
+  - 默认最多返回前 `10` 条异常对象，可通过 `pool_object_limit` 调整
+
+请求参数：
+
+- `drive_limit`
+  - 默认 `10`，范围 `0-100`
+- `pool_object_limit`
+  - 默认 `10`，范围 `0-100`
+- `stale_probe_after_hours`
+  - 默认 `24`，范围 `1-720`
 
 返回示例：
 
 ```json
 {
-  "media_id": 42,
-  "route": "source_stream",
-  "stream_url": "https://openlist.local/media/42.mkv"
+  "routes": {
+    "self": 1,
+    "pool": 0,
+    "source_copy": 0,
+    "source_stream": 2
+  },
+  "drives": {
+    "stats": {
+      "total": 3,
+      "users": 2,
+      "enabled": 2,
+      "disabled": 1,
+      "share_pool_enabled": 1,
+      "by_drive_type": {
+        "115": 3
+      },
+      "by_health_status": {
+        "healthy": 2,
+        "unknown": 1
+      }
+    },
+    "attention_total": 2,
+    "probe_error_distribution": {
+      "invalid_cookie": 1
+    },
+    "stale_probe_count": 1,
+    "stale_probe_threshold_hours": 24,
+    "items": []
+  },
+  "pool_objects": {
+    "stats": {
+      "total": 4,
+      "owners": 2,
+      "media_items": 3,
+      "by_status": {
+        "ready": 1,
+        "suspect": 0,
+        "cooldown": 1,
+        "disabled": 1,
+        "stale": 1
+      },
+      "by_drive_type": {
+        "115": 4
+      },
+      "cooldown_active": 1,
+      "cooldown_expired": 0
+    },
+    "attention_total": 3,
+    "items": []
+  }
 }
 ```
+
+### `GET /api/admin/drives/stats`
+
+返回当前 drive 账号聚合统计，适合快速观察 donor 池规模、启用状态和健康状态分布：
+
+```json
+{
+  "total": 3,
+  "users": 2,
+  "enabled": 2,
+  "disabled": 1,
+  "share_pool_enabled": 1,
+  "by_drive_type": {
+    "115": 2,
+    "alist": 1
+  },
+  "by_health_status": {
+    "healthy": 2,
+    "cooldown": 1
+  }
+}
+```
+
+### `GET /api/admin/pool-objects`
+
+返回当前缓存 / donor 对象及其健康状态，可按查询参数过滤：
+
+- `status`
+- `owner_user_id`
+- `media_id`
+
+返回示例：
+
+```json
+[
+  {
+    "id": 1,
+    "media_id": 42,
+    "owner_user_id": 7,
+    "drive_type": "115",
+    "target_path": "/EmbyCache/alice/Movies/Movie.2024.mkv",
+    "status": "cooldown",
+    "last_verified_at": null,
+    "last_success_at": null,
+    "last_failure_at": "2026-05-19T23:00:00",
+    "failure_count": 2,
+    "cooldown_until": "2026-05-19T23:10:00"
+  }
+]
+```
+
+### `GET /api/admin/pool-objects/stats`
+
+返回当前 pool objects 聚合统计，适合观察缓存对象状态分布、来源盘类型分布，以及 `cooldown` 是否仍在生效：
+
+```json
+{
+  "total": 4,
+  "owners": 2,
+  "media_items": 2,
+  "by_status": {
+    "ready": 1,
+    "suspect": 0,
+    "cooldown": 2,
+    "disabled": 0,
+    "stale": 1
+  },
+  "by_drive_type": {
+    "115": 3,
+    "alist": 1
+  },
+  "cooldown_active": 1,
+  "cooldown_expired": 1
+}
+```
+
+### `POST /api/admin/pool-objects/{pool_object_id}/recover`
+
+手动恢复一个 `stale / cooldown / suspect` 的 pool object，让它重新回到 `ready` 可选状态。
+
+当前行为：
+
+- 将 `status` 重置为 `ready`
+- 清空 `cooldown_until`
+- 将 `failure_count` 重置为 `0`
+
+### `POST /api/admin/pool-objects/recover`
+
+按选择器批量恢复 pool object。
+
+支持的选择器：
+
+- `ids`
+- `owner_user_id`
+- `media_id`
+- `statuses`
+
+如果没有显式传 `statuses`，默认只恢复：
+
+- `cooldown`
+- `stale`
+- `suspect`
+
+请求示例：
+
+```json
+{
+  "owner_user_id": 7
+}
+```
+
+这适合在某个 donor 恢复可用后，一次性把它名下的异常对象重新放回候选池。
+
+### `POST /api/admin/pool-objects/disable`
+
+按选择器批量禁用 pool object。最常见的用法是按 `owner_user_id` 一次性禁用某个 donor 的全部共享对象。
+
+请求示例：
+
+```json
+{
+  "owner_user_id": 7
+}
+```
+
+### `POST /api/admin/pool-objects/enable`
+
+按选择器批量重新启用 pool object。默认只会匹配当前 `disabled` 的对象，并把它们恢复为 `ready`。
+
+请求示例：
+
+```json
+{
+  "owner_user_id": 7
+}
+```
+
+### `GET /api/playback/{media_id}`
+
+按真实用户上下文返回播放决策结果，并给出网关自身的可播放流地址。
+
+请求参数：
+
+- `user_id`
+  - 当前播放用户，用于命中当前用户缓存、共享池 donor 和 source copy 目标盘
+
+返回示例：
+
+```json
+{
+  "user_id": 7,
+  "media_id": 42,
+  "route": "source_copy",
+  "stream_url": "http://gateway.local/api/playback/42/stream?token=...",
+  "upstream_stream_url": "https://115cdn.local/media/42.mkv",
+  "upstream_stream_headers": {
+    "user-agent": ""
+  }
+}
+```
+
+### `GET /api/playback/{media_id}/stream`
+
+网关代理实际播放流：
+
+- 优先使用签名 `token` 参数访问，旧的 `user_id` 查询参数仅作为兼容兜底
+- 自动按当前决策选择 `115` 或 `GD/OpenList` 上游
+- 自动附带上游要求的请求头
+- 透传 `Range / If-Range`
+- 透传 `206 / Content-Range / Accept-Ranges / Content-Length`
 
 ## 验证方式
 
@@ -203,6 +709,11 @@ uv run python scripts/validate_openlist_stream.py
 uv run python scripts/validate_rapid_copy.py
 uv run python scripts/verify_mvp.py
 ```
+
+`validate_rapid_copy.py` 会始终探测 `source_copy / O2P`，并在 donor cookie 已配置时额外探测 `pool / P2P`。这两条链路是分开的：
+
+- `source_copy / O2P`: `GD/OpenList -> 当前用户 115`
+- `pool / P2P`: `donor 115 -> target 115`
 
 ## 当前项目进度
 
@@ -269,4 +780,3 @@ uv run python scripts/verify_mvp.py
 ## 仓库位置
 
 - GitHub: `https://github.com/xmm2022/media-pro`
-

@@ -41,7 +41,9 @@ def test_create_user_and_drive_account(tmp_path: Path) -> None:
     )
 
     assert drive_response.status_code == 201
+    assert drive_response.json()["enabled"] is True
     assert drive_response.json()["share_pool_enabled"] is True
+    assert drive_response.json()["health_status"] == "unknown"
     assert drive_response.json()["cookie_preview"] == "UID=1..."
 
 

@@ -1,4 +1,8 @@
-from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from gateway.models import PoolObjectStatus
 
 
 class UserCreate(BaseModel):
@@ -27,5 +31,166 @@ class DriveAccountRead(BaseModel):
     user_id: int
     drive_type: str
     root_dir: str
+    enabled: bool
     share_pool_enabled: bool
+    health_status: str
+    last_checked_at: datetime | None = None
     cookie_preview: str
+
+
+class DriveAccountUpdate(BaseModel):
+    cookie: str | None = None
+    root_dir: str | None = None
+    enabled: bool | None = None
+    share_pool_enabled: bool | None = None
+    health_status: str | None = None
+
+    @model_validator(mode="after")
+    def validate_has_changes(self) -> "DriveAccountUpdate":
+        if any(
+            value is not None
+            for value in (
+                self.cookie,
+                self.root_dir,
+                self.enabled,
+                self.share_pool_enabled,
+                self.health_status,
+            )
+        ):
+            return self
+        raise ValueError("at least one field must be provided")
+
+
+class DriveAccountDeleteResponse(BaseModel):
+    drive_id: int
+    user_id: int
+    disabled_pool_objects: int
+
+
+class DriveAccountBulkActionRequest(BaseModel):
+    ids: list[int] | None = None
+    user_id: int | None = None
+    drive_type: str | None = None
+    enabled: bool | None = None
+    share_pool_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_has_selector(self) -> "DriveAccountBulkActionRequest":
+        if (
+            self.ids
+            or self.user_id is not None
+            or self.drive_type is not None
+            or self.enabled is not None
+            or self.share_pool_enabled is not None
+        ):
+            return self
+        raise ValueError("at least one selector is required")
+
+
+class DriveAccountBulkActionResponse(BaseModel):
+    matched: int
+    updated: int
+    deleted: int
+    updated_pool_objects: int
+    drive_ids: list[int]
+
+
+class DriveStatsRead(BaseModel):
+    total: int
+    users: int
+    enabled: int
+    disabled: int
+    share_pool_enabled: int
+    by_drive_type: dict[str, int]
+    by_health_status: dict[str, int]
+
+
+class DriveProbeRead(BaseModel):
+    ok: bool
+    error_code: str | None
+    detail: str | None = None
+    drive: DriveAccountRead
+
+
+class DriveProbeBulkResponse(BaseModel):
+    matched: int
+    healthy: int
+    unhealthy: int
+    drive_ids: list[int]
+    results: list[DriveProbeRead]
+
+
+class CatalogSyncRequest(BaseModel):
+    root_path: str | None = None
+
+
+class CatalogSyncResponse(BaseModel):
+    root_path: str
+    inserted: int
+    updated: int
+
+
+class PoolObjectRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    media_id: int
+    owner_user_id: int
+    drive_type: str
+    target_path: str
+    status: PoolObjectStatus
+    last_verified_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    failure_count: int
+    cooldown_until: datetime | None = None
+
+
+class PoolObjectBulkActionRequest(BaseModel):
+    ids: list[int] | None = None
+    owner_user_id: int | None = None
+    media_id: int | None = None
+    statuses: list[PoolObjectStatus] | None = None
+
+    @model_validator(mode="after")
+    def validate_has_selector(self) -> "PoolObjectBulkActionRequest":
+        if self.ids or self.owner_user_id is not None or self.media_id is not None or self.statuses:
+            return self
+        raise ValueError("at least one selector is required")
+
+
+class PoolObjectBulkActionResponse(BaseModel):
+    matched: int
+    updated: int
+    pool_objects: list[PoolObjectRead]
+
+
+class PoolObjectStatsRead(BaseModel):
+    total: int
+    owners: int
+    media_items: int
+    by_status: dict[str, int]
+    by_drive_type: dict[str, int]
+    cooldown_active: int
+    cooldown_expired: int
+
+
+class DriveOverviewSectionRead(BaseModel):
+    stats: DriveStatsRead
+    attention_total: int
+    probe_error_distribution: dict[str, int]
+    stale_probe_count: int
+    stale_probe_threshold_hours: int
+    items: list[DriveAccountRead]
+
+
+class PoolObjectOverviewSectionRead(BaseModel):
+    stats: PoolObjectStatsRead
+    attention_total: int
+    items: list[PoolObjectRead]
+
+
+class AdminOverviewRead(BaseModel):
+    routes: dict[str, int]
+    drives: DriveOverviewSectionRead
+    pool_objects: PoolObjectOverviewSectionRead

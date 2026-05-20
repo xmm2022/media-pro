@@ -92,6 +92,10 @@ def test_alembic_upgrade_head_runs_from_repo_root(tmp_path: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             ).fetchall()
         }
+        pool_object_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info('pool_objects')").fetchall()
+        }
 
     assert tables >= {
         "audit_logs",
@@ -101,4 +105,12 @@ def test_alembic_upgrade_head_runs_from_repo_root(tmp_path: Path) -> None:
         "transfer_jobs",
         "user_drive_accounts",
         "users",
+    }
+    assert pool_object_columns >= {
+        "status",
+        "last_verified_at",
+        "last_success_at",
+        "last_failure_at",
+        "failure_count",
+        "cooldown_until",
     }
