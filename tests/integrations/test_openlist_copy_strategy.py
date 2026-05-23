@@ -24,6 +24,7 @@ class _StubAdminClient:
         self.copy_calls: list[tuple[str, str, list[str]]] = []
         self.list_calls: list[str] = []
         self.copy_responses: list[CopyResult] = []
+        self.list_responses: list[list[FsItem]] = []
         self.list_response: list[FsItem] = [FsItem(name="dummy", is_dir=False, size=1)]
         self.list_raises: Exception | None = None
         self.closed = False
@@ -38,6 +39,8 @@ class _StubAdminClient:
         self.list_calls.append(mount_path)
         if self.list_raises is not None:
             raise self.list_raises
+        if self.list_responses:
+            return self.list_responses.pop(0)
         return self.list_response
 
     async def aclose(self) -> None:
@@ -54,6 +57,7 @@ async def test_strategy_drive_type_is_caiyun() -> None:
 @pytest.mark.asyncio
 async def test_copy_from_source_translates_to_fs_copy_payload() -> None:
     admin = _StubAdminClient()
+    admin.list_response = [FsItem(name="Movie.2024.mkv", is_dir=False, size=1024)]
     strategy = OpenListCopyStrategy(admin_client=admin, drive_type="caiyun")
     request = SourceCopyRequest(
         target_cookie="",
@@ -68,6 +72,59 @@ async def test_copy_from_source_translates_to_fs_copy_payload() -> None:
     assert admin.copy_calls == [
         ("/gd/Movies", "/caiyun-alice/EmbyCache/Movies", ["Movie.2024.mkv"]),
     ]
+    assert admin.list_calls == ["/caiyun-alice/EmbyCache/Movies"]
+
+
+@pytest.mark.asyncio
+async def test_copy_from_source_waits_until_target_is_visible() -> None:
+    admin = _StubAdminClient()
+    admin.list_responses = [
+        [],
+        [FsItem(name="Movie.2024.mkv", is_dir=False, size=1024)],
+    ]
+    strategy = OpenListCopyStrategy(
+        admin_client=admin,
+        drive_type="caiyun",
+        verify_attempts=2,
+        verify_interval_seconds=0,
+    )
+    request = SourceCopyRequest(
+        target_cookie="",
+        source=SourceObjectRef(openlist_path="/gd/Movies/Movie.2024.mkv"),
+        target_path="/caiyun-alice/EmbyCache/Movies/Movie.2024.mkv",
+    )
+
+    result = await strategy.copy_from_source(request)
+
+    assert result.ok is True
+    assert result.target_path == request.target_path
+    assert admin.list_calls == [
+        "/caiyun-alice/EmbyCache/Movies",
+        "/caiyun-alice/EmbyCache/Movies",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_copy_from_source_returns_failure_when_target_never_appears() -> None:
+    admin = _StubAdminClient()
+    admin.list_response = []
+    strategy = OpenListCopyStrategy(
+        admin_client=admin,
+        drive_type="caiyun",
+        verify_attempts=2,
+        verify_interval_seconds=0,
+    )
+    request = SourceCopyRequest(
+        target_cookie="",
+        source=SourceObjectRef(openlist_path="/gd/Movies/Movie.2024.mkv"),
+        target_path="/caiyun-alice/EmbyCache/Movies/Movie.2024.mkv",
+    )
+
+    result = await strategy.copy_from_source(request)
+
+    assert result.ok is False
+    assert result.error_code == "openlist_copy_unverified"
+    assert result.detail == "target file did not appear: /caiyun-alice/EmbyCache/Movies/Movie.2024.mkv"
 
 
 @pytest.mark.asyncio
