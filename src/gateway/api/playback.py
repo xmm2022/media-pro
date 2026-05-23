@@ -7,9 +7,14 @@ from sqlalchemy.orm import Session
 
 from gateway.config import settings
 from gateway.db import get_session
+from gateway.integrations.drive115_health_client import Drive115HealthClient
 from gateway.integrations.drive115_stream_client import Drive115StreamClient
+from gateway.integrations.openlist_admin_client import OpenListAdminClient
 from gateway.integrations.openlist_client import OpenListClient
+from gateway.integrations.openlist_copy_strategy import OpenListCopyStrategy
 from gateway.integrations.pool_copy_115_client import PoolCopy115Client
+from gateway.integrations.rapid_copy_115_strategy import Rapid115Strategy
+from gateway.integrations.rapid_copy_strategy import RapidCopyStrategyRegistry
 from gateway.integrations.source_copy_115_client import SourceCopy115Client
 from gateway.playback import PlaybackDecision, PlaybackService
 from gateway.playback_resolver import PlaybackResolver
@@ -116,11 +121,29 @@ async def _resolve_playback_decision(
     pool_copy_client = PoolCopy115Client()
     source_copy_client = SourceCopy115Client(openlist_client)
     drive_stream_client = Drive115StreamClient()
+    registry = RapidCopyStrategyRegistry()
+    registry.register(
+        Rapid115Strategy(
+            pool_copy_client=pool_copy_client,
+            source_copy_client=source_copy_client,
+            health_client=Drive115HealthClient(),
+            cookie_cipher=request.app.state.cookie_cipher,
+        )
+    )
+    if settings.openlist_admin_token:
+        registry.register(
+            OpenListCopyStrategy(
+                admin_client=OpenListAdminClient(
+                    base_url=settings.openlist_base_url,
+                    admin_token=settings.openlist_admin_token,
+                ),
+                drive_type="caiyun",
+            )
+        )
     resolver = PlaybackResolver(
         PlaybackService(total_budget_ms=2000),
         openlist_client,
-        pool_copy_client=pool_copy_client,
-        source_copy_client=source_copy_client,
+        strategy_registry=registry,
         drive_stream_client=drive_stream_client,
         cookie_cipher=request.app.state.cookie_cipher,
     )
@@ -130,8 +153,7 @@ async def _resolve_playback_decision(
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
     finally:
-        await source_copy_client.aclose()
-        await pool_copy_client.aclose()
+        await registry.aclose()
         await openlist_client.aclose()
 
 

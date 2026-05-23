@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from time import perf_counter
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from gateway.integrations.drive115_stream_client import Drive115StreamClient
@@ -15,6 +15,11 @@ from gateway.integrations.rapid_copy_client import (
     RapidCopyResult,
     SourceCopyRequest,
     SourceObjectRef,
+)
+from gateway.integrations.rapid_copy_strategy import (
+    RapidCopyStrategy,
+    RapidCopyStrategyRegistry,
+    UnsupportedDriveType,
 )
 from gateway.integrations.source_copy_115_client import SourceCopy115Client
 from gateway.models import (
@@ -57,6 +62,7 @@ class PlaybackResolver:
         playback_service: PlaybackService,
         openlist_client: OpenListClient,
         *,
+        strategy_registry: RapidCopyStrategyRegistry | None = None,
         rapid_copy_client: RapidCopyClient | None = None,
         pool_copy_client: PoolCopy115Client | None = None,
         source_copy_client: SourceCopy115Client | None = None,
@@ -72,6 +78,7 @@ class PlaybackResolver:
         self._source_copy_client = source_copy_client
         self._drive_stream_client = drive_stream_client
         self._cookie_cipher = cookie_cipher
+        self._strategy_registry = strategy_registry
         self._pool_service = pool_service or PoolService()
         self._transfer_service = transfer_service or TransferService()
 
@@ -87,10 +94,12 @@ class PlaybackResolver:
 
         target_drive = self._load_target_drive(session, user_id=user_id)
         target_cookie = self._decrypt_cookie(target_drive)
+        strategy = self._dispatch_strategy(target_drive) if target_drive is not None else None
         self_pool = session.scalar(
             select(PoolObject).where(
                 PoolObject.media_id == media_id,
                 PoolObject.owner_user_id == user_id,
+                PoolObject.drive_type == target_drive.drive_type if target_drive is not None else False,
             )
         )
         if self_pool is not None and target_drive is not None:
@@ -115,26 +124,47 @@ class PlaybackResolver:
 
         donor_bundle = self._select_donor_bundle(session, user_id=user_id, media_id=media_id)
 
-        can_attempt_source_copy = self._source_copy_client is not None or self._rapid_copy_client is not None
-        if target_drive is not None and can_attempt_source_copy and self._cookie_cipher is not None:
-            target_path = self._build_target_path(target_drive.root_dir, media.source_path)
-            assert target_cookie is not None
+        can_attempt_source_copy = (
+            strategy is not None
+            or (
+                target_cookie is not None
+                and (self._source_copy_client is not None or self._rapid_copy_client is not None)
+            )
+        )
+        if target_drive is not None and can_attempt_source_copy:
+            target_path = self._build_target_path(target_drive, media.source_path)
             should_attempt_source_copy = True
 
             donor_cookie = None
-            if donor_bundle is not None:
+            if donor_bundle is not None and self._cookie_cipher is not None:
                 donor_cookie = self._cookie_cipher.decrypt(donor_bundle.drive.cookie_encrypted)
 
-            if donor_bundle is not None and (self._pool_copy_client is not None or self._rapid_copy_client is not None):
+            can_attempt_pool_copy = (
+                strategy is not None
+                or (
+                    target_cookie is not None
+                    and (self._pool_copy_client is not None or self._rapid_copy_client is not None)
+                )
+            )
+            if donor_bundle is not None and can_attempt_pool_copy:
                 pool_request = PoolCopyRequest(
                     donor_cookie=donor_cookie or "",
-                    target_cookie=target_cookie,
+                    target_cookie=target_cookie or "",
                     source_path=donor_bundle.pool_object.target_path,
                     target_path=target_path,
                 )
-                if self._pool_copy_client is not None:
+                if strategy is not None:
+                    try:
+                        donor_result = await strategy.copy_from_pool(pool_request)
+                    except NotImplementedError:
+                        donor_result = RapidCopyResult(
+                            ok=False,
+                            error_code="pool_not_supported_for_drive_type",
+                        )
+                elif self._pool_copy_client is not None:
                     donor_result = await self._pool_copy_client.copy_from_pool(pool_request)
                 else:
+                    assert self._rapid_copy_client is not None
                     donor_result = await self._rapid_copy_client.copy_from_pool(pool_request)
                 self._record_transfer_job(
                     session,
@@ -151,6 +181,7 @@ class PlaybackResolver:
                         media_id=media_id,
                         owner_user_id=user_id,
                         target_path=donor_result.target_path or target_path,
+                        drive_type=target_drive.drive_type,
                     )
                     decision = await self._stream_decision(
                         "pool",
@@ -174,7 +205,7 @@ class PlaybackResolver:
 
             if should_attempt_source_copy:
                 source_request = SourceCopyRequest(
-                    target_cookie=target_cookie,
+                    target_cookie=target_cookie or "",
                     source=SourceObjectRef(
                         openlist_path=media.openlist_path,
                         source_path=media.source_path,
@@ -183,9 +214,12 @@ class PlaybackResolver:
                     ),
                     target_path=target_path,
                 )
-                if self._source_copy_client is not None:
+                if strategy is not None:
+                    source_result = await strategy.copy_from_source(source_request)
+                elif self._source_copy_client is not None:
                     source_result = await self._source_copy_client.copy_from_source(source_request)
                 else:
+                    assert self._rapid_copy_client is not None
                     source_result = await self._rapid_copy_client.copy_from_source(source_request)
                 self._record_transfer_job(
                     session,
@@ -201,6 +235,7 @@ class PlaybackResolver:
                         media_id=media_id,
                         owner_user_id=user_id,
                         target_path=source_result.target_path or target_path,
+                        drive_type=target_drive.drive_type,
                     )
                     decision = await self._stream_decision(
                         "source_copy",
@@ -267,20 +302,33 @@ class PlaybackResolver:
             return None
 
     def _load_target_drive(self, session: Session, *, user_id: int) -> UserDriveAccount | None:
+        drive_type_preference = case(
+            (UserDriveAccount.drive_type == "115", 0),
+            else_=1,
+        )
         return session.scalar(
             select(UserDriveAccount)
             .where(
                 UserDriveAccount.user_id == user_id,
-                UserDriveAccount.drive_type == "115",
                 UserDriveAccount.enabled.is_(True),
             )
-            .order_by(UserDriveAccount.id.desc())
+            .order_by(drive_type_preference, UserDriveAccount.id.desc())
         )
 
     def _decrypt_cookie(self, drive: UserDriveAccount | None) -> str | None:
         if drive is None or self._cookie_cipher is None:
             return None
+        if drive.cookie_encrypted is None:
+            return None
         return self._cookie_cipher.decrypt(drive.cookie_encrypted)
+
+    def _dispatch_strategy(self, target_drive: UserDriveAccount) -> RapidCopyStrategy | None:
+        if self._strategy_registry is None:
+            return None
+        try:
+            return self._strategy_registry.get(target_drive.drive_type)
+        except UnsupportedDriveType:
+            return None
 
     def _select_donor_bundle(self, session: Session, *, user_id: int, media_id: int) -> DonorBundle | None:
         pool_objects = session.scalars(
@@ -288,6 +336,7 @@ class PlaybackResolver:
             .where(
                 PoolObject.media_id == media_id,
                 PoolObject.owner_user_id != user_id,
+                PoolObject.drive_type == "115",
             )
             .order_by(PoolObject.id)
         ).all()
@@ -336,8 +385,11 @@ class PlaybackResolver:
             return status.value  # type: ignore[return-value]
         return str(status)
 
-    def _build_target_path(self, root_dir: str, source_path: str) -> str:
-        return str(PurePosixPath(root_dir) / PurePosixPath(source_path.lstrip("/")))
+    def _build_target_path(self, target_drive: UserDriveAccount, source_path: str) -> str:
+        target_path = PurePosixPath(target_drive.root_dir) / PurePosixPath(source_path.lstrip("/"))
+        if target_drive.openlist_mount_path:
+            return str(PurePosixPath(target_drive.openlist_mount_path) / str(target_path).lstrip("/"))
+        return str(target_path)
 
     def _record_transfer_job(
         self,
@@ -384,6 +436,7 @@ class PlaybackResolver:
         media_id: int,
         owner_user_id: int,
         target_path: str,
+        drive_type: str,
     ) -> PoolObject:
         pool_object = session.scalar(
             select(PoolObject).where(
@@ -395,7 +448,7 @@ class PlaybackResolver:
             pool_object = PoolObject(
                 media_id=media_id,
                 owner_user_id=owner_user_id,
-                drive_type="115",
+                drive_type=drive_type,
                 target_path=target_path,
                 status=PoolObjectStatus.READY,
             )
