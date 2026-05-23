@@ -28,6 +28,10 @@ def enum_values(enum_class: type[Enum]) -> list[str]:
     return [member.value for member in enum_class]
 
 
+SUPPORTED_DRIVE_TYPES: frozenset[str] = frozenset({"115", "caiyun"})
+OPENLIST_BACKED_DRIVE_TYPES: frozenset[str] = frozenset({"caiyun"})
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -44,12 +48,13 @@ class UserDriveAccount(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     drive_type: Mapped[str] = mapped_column(String(32), default="115")
-    cookie_encrypted: Mapped[str] = mapped_column(Text)
+    cookie_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     root_dir: Mapped[str] = mapped_column(String(255), default="/EmbyCache")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     share_pool_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     health_status: Mapped[str] = mapped_column(String(32), default="unknown")
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    openlist_mount_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class MediaItem(Base):
