@@ -138,6 +138,8 @@ async def _resolve_playback_decision(
                     admin_token=settings.openlist_admin_token,
                 ),
                 drive_type="caiyun",
+                verify_attempts=settings.openlist_copy_verify_attempts,
+                verify_interval_seconds=settings.openlist_copy_verify_interval_seconds,
             )
         )
     resolver = PlaybackResolver(

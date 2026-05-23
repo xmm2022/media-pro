@@ -133,6 +133,12 @@ uv run uvicorn gateway.main:app --reload
 - `GATEWAY_OPENLIST_ADMIN_TOKEN`
   - OpenList admin token
   - caiyun / 139Yun storage 创建、复用已有 storage、删除 managed storage、`fs/copy` 都需要它
+- `GATEWAY_OPENLIST_COPY_VERIFY_ATTEMPTS`
+  - caiyun / 139Yun `source_copy` 后等待目标文件在 OpenList 可见的最大探测次数
+  - 默认值：`30`
+- `GATEWAY_OPENLIST_COPY_VERIFY_INTERVAL_SECONDS`
+  - 每次目标文件可见性探测之间的等待秒数
+  - 默认值：`1.0`
 - `GATEWAY_RAPID_COPY_BASE_URL`
   - rapid-copy 服务地址
 - `GATEWAY_OPENLIST_PROBE_PATH`
@@ -784,6 +790,8 @@ uv run python scripts/verify_mvp.py
 ```bash
 GATEWAY_OPENLIST_BASE_URL=http://localhost:5246 \
 GATEWAY_OPENLIST_ADMIN_TOKEN=<openlist-admin-token> \
+GATEWAY_OPENLIST_COPY_VERIFY_ATTEMPTS=30 \
+GATEWAY_OPENLIST_COPY_VERIFY_INTERVAL_SECONDS=1.0 \
 CAIYUN_MOUNT_PATH=/yidon \
 GD_SOURCE_PATH="/google drive/openlist/path/to/sample.mkv" \
 CAIYUN_TARGET_SUBDIR="" \
