@@ -130,6 +130,9 @@ uv run uvicorn gateway.main:app --reload
   - OpenList 服务地址
 - `GATEWAY_OPENLIST_TOKEN`
   - OpenList Token
+- `GATEWAY_OPENLIST_ADMIN_TOKEN`
+  - OpenList admin token
+  - caiyun / 139Yun storage 创建、复用已有 storage、删除 managed storage、`fs/copy` 都需要它
 - `GATEWAY_RAPID_COPY_BASE_URL`
   - rapid-copy 服务地址
 - `GATEWAY_OPENLIST_PROBE_PATH`
@@ -146,6 +149,15 @@ uv run uvicorn gateway.main:app --reload
   - `pool / P2P` 或 `source_copy / O2P` 的目标路径
 
 Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through the admin API. Keep `GATEWAY_DATABASE_URL` pointed at the SQLite file or database you want the gateway to manage.
+
+如果已有 `gateway.db`，升级新版代码后先备份并迁移：
+
+```bash
+cp gateway.db gateway.db.bak-$(date +%Y%m%d%H%M%S)
+uv run alembic upgrade head
+```
+
+如果 `gateway.db` 还不存在，应用启动时会自动创建当前模型对应的表结构。
 
 ## 当前接口说明
 
@@ -172,9 +184,9 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 
 ### `POST /api/admin/drives`
 
-为某个用户录入 drive 账号信息，cookie 会加密落库。
+为某个用户录入 drive 账号信息。`115` 的 cookie 会加密落库；`caiyun` 的 token 默认交给 OpenList storage 保存，media-pro 只保存 mount path。
 
-请求示例：
+`115` 请求示例：
 
 ```json
 {
@@ -186,6 +198,43 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 }
 ```
 
+让 media-pro 创建并管理新的 139Yun / caiyun OpenList storage：
+
+```json
+{
+  "user_id": 1,
+  "drive_type": "caiyun",
+  "root_dir": "/EmbyCache",
+  "mount_path": "/caiyun-alice",
+  "caiyun": {
+    "access_token": "<139 access token>",
+    "refresh_token": "<139 refresh token>",
+    "account_type": "personal_new"
+  }
+}
+```
+
+复用 OpenList 里已经存在的 139Yun / caiyun storage，例如 `/yidon`：
+
+```json
+{
+  "user_id": 1,
+  "drive_type": "caiyun",
+  "root_dir": "/",
+  "mount_path": "/yidon",
+  "adopt_existing": true
+}
+```
+
+`adopt_existing=true` 会把该 drive 标记为 `openlist_storage_managed=false`：
+
+- media-pro 只绑定已有 OpenList storage
+- 不创建新的 OpenList storage
+- 不更新该 storage 的 token
+- 删除 media-pro drive 时不会删除 OpenList 里的原 storage
+
+如果目标目录尚未存在，先用 `root_dir="/"`。例如 `/yidon/EmbyCache` 不存在时，`root_dir="/EmbyCache"` 会让 copy 目标落到不存在的目录下。
+
 返回里会包含当前 donor 运维常用字段：
 
 - `enabled`
@@ -193,6 +242,8 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 - `health_status`
 - `last_checked_at`
 - `cookie_preview`
+- `openlist_mount_path`
+- `openlist_storage_managed`
 
 ### `POST /api/admin/drives/{drive_id}/probe`
 
@@ -208,6 +259,9 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
   - 校验或创建 `root_dir`，确认目标缓存目录可用
 - `alist`
   - 通过 OpenList 列举 `root_dir`，确认路径仍可访问
+- `caiyun`
+  - 通过 OpenList admin token 列举 `openlist_mount_path`
+  - 可返回 `healthy`、`invalid_token`、`mount_missing`、`openlist_http_error`、`openlist_admin_failed`
 
 返回示例：
 
@@ -324,6 +378,7 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 - `enabled`
 - `share_pool_enabled`
 - `health_status`
+- `caiyun`
 
 请求示例：
 
@@ -336,6 +391,11 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 ```
 
 这条接口主要用于 donor 账号级别的开关和维护，不需要去直接改数据库。
+
+对 `caiyun`：
+
+- managed storage 可通过 `caiyun` 字段更新 OpenList storage token
+- adopted storage 即 `openlist_storage_managed=false` 会拒绝 token 更新并返回 `409 storage_unmanaged`
 
 当前联动规则：
 
@@ -390,6 +450,8 @@ Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through 
 
 - 先把该 drive `root_dir` 下的 pool objects 标记为 `disabled`
 - 再删除 drive 账号本身
+- `caiyun` 且 `openlist_storage_managed=true` 时，会同时删除对应 OpenList storage
+- `caiyun` 且 `openlist_storage_managed=false` 时，只删除本地 drive 记录，不删除 OpenList 里的已有 storage
 - 返回本次联动停用的 pool object 数量
 
 返回示例：
@@ -714,6 +776,21 @@ uv run python scripts/verify_mvp.py
 
 - `source_copy / O2P`: `GD/OpenList -> 当前用户 115`
 - `pool / P2P`: `donor 115 -> target 115`
+
+### 4. 跑 caiyun / 139Yun source copy smoke
+
+需要本地 OpenList、OpenList admin token、一个 GD 源文件、一个 139Yun mount path：
+
+```bash
+GATEWAY_OPENLIST_BASE_URL=http://localhost:5246 \
+GATEWAY_OPENLIST_ADMIN_TOKEN=<openlist-admin-token> \
+CAIYUN_MOUNT_PATH=/yidon \
+GD_SOURCE_PATH="/google drive/openlist/path/to/sample.mkv" \
+CAIYUN_TARGET_SUBDIR="" \
+uv run python scripts/validate_caiyun_source_copy.py
+```
+
+普通 139 账号可能有单文件上传大小限制。验证时优先选小于账号限制的样例文件。
 
 ## 当前项目进度
 
