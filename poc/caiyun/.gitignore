@@ -3,4 +3,3 @@
 __pycache__/
 *.pyc
 results/*.har
-results/t4_trace/

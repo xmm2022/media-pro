@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Validate whether "GD source → user 139 cloud" rapid copy is feasible via direct 139 API, OpenList facilities, or Playwright capture, and produce a feasibility report plus PR sketch for the eventual media-pro caiyun integration. No changes to `src/gateway/`.
+**Goal:** Validate whether "GD source → user 139 cloud" rapid copy is feasible via direct 139 API, OpenList facilities, or browser HAR capture, and produce a feasibility report plus PR sketch for the eventual media-pro caiyun integration. No changes to `src/gateway/`.
 
-**Architecture:** Four exploration tracks share a centralised OpenList credential helper. T1 (static) + T3 (OpenList probe) + T4 (Playwright capture) run independently; T2 (cookie direct-call) depends on T1+T4 producing a merged API candidate list. All artefacts land in `poc/caiyun/results/`, final report in `poc/caiyun/reports/`. `src/gateway/` must stay untouched (verified by `git diff src/` before every commit).
+**Architecture:** Four exploration tracks share a centralised OpenList credential helper. T1 (static) + T3 (OpenList probe) + T4 (manual HAR capture) run independently; T2 (cookie direct-call) depends on T1+T4 producing a merged API candidate list. All artefacts land in `poc/caiyun/results/`, final report in `poc/caiyun/reports/`. `src/gateway/` must stay untouched (verified by `git diff src/` before every commit).
 
-**Tech Stack:** Python 3.12, httpx, pydantic, python-dotenv, playwright, pytest, respx
+**Tech Stack:** Python 3.12, httpx, pydantic, python-dotenv, pytest, respx (no Playwright — T4 uses a browser the operator already has)
 
 ---
 
@@ -16,7 +16,7 @@
 - `poc/caiyun/scripts/common/caiyun_api.py` — thin 139 wrapper, populated incrementally as T1/T4 discover endpoints.
 - `poc/caiyun/scripts/t1_static_analysis.py` — static analysis of `/root/mobile-caiyun-autosave`; outputs `results/t1_api_inventory.md`.
 - `poc/caiyun/scripts/t3_openlist_probe.py` — OpenList copy probe; outputs `results/t3_openlist_probe.md`.
-- `poc/caiyun/scripts/t4_playwright_probe.py` — Playwright dynamic capture; outputs `results/t4_playwright_capture.har` + `results/t4_api_findings.md`.
+- `poc/caiyun/scripts/t4_har_parse.py` — parses a HAR file exported manually from a browser; outputs `results/t4_api_findings.md`. The HAR itself (`results/t4_playwright_capture.har`) is gitignored.
 - `poc/caiyun/scripts/merge_api_candidates.py` — merge T1+T4 outputs into a single candidate list consumed by T2; outputs `results/api_candidates.json`.
 - `poc/caiyun/scripts/t2_cookie_probe.py` — cookie/token direct-call probe; outputs `results/t2_cookie_probe.jsonl`.
 - `poc/caiyun/tests/test_openlist_creds.py` — unit tests for credential parsing.
@@ -628,172 +628,68 @@ git commit -m "feat(poc): t3 openlist copy probe"
 
 ---
 
-### Task 4: T4 Playwright dynamic capture
+### Task 4: T4 HAR parsing (browser-captured)
+
+> **No automation.** Operator triggers the three scenarios in a real browser, exports a HAR via DevTools, and runs a pure-Python parser. No Playwright / Chromium dependency.
 
 **Files:**
-- Modify: `poc/caiyun/scripts/t4_playwright_probe.py`
-- Create: `poc/caiyun/results/t4_playwright_capture.har`
+- Modify: `poc/caiyun/scripts/t4_har_parse.py`
+- Create (by operator, not committed): `poc/caiyun/results/t4_playwright_capture.har`
 - Create: `poc/caiyun/results/t4_api_findings.md`
 
-- [ ] **Step 1: Write the capture script**
+- [ ] **Step 1: Confirm the parser script is already in place**
 
-Replace `poc/caiyun/scripts/t4_playwright_probe.py`:
-
-```python
-"""Track 4: Playwright dynamic API capture.
-
-Spec: docs/superpowers/specs/2026-05-23-caiyun-poc-design.md
-section: 设计 / Track 4
-
-Loads two 139 sessions via OpenList-provided tokens, opens
-https://yun.139.com/, lets the operator (or automation) trigger
-three non-share scenarios:
-
-  S1 same-account copy / move
-  S2 cross-account migration (only if 139 web exposes the action)
-  S3 upload (prepare + hash + put)
-
-All outbound HTTP is captured to a HAR file. After the page closes
-we parse the HAR and emit a candidate API list.
-"""
-from __future__ import annotations
-
-import asyncio
-import json
-import os
-import sys
-from pathlib import Path
-
-from dotenv import load_dotenv
-from playwright.async_api import async_playwright
-
-ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT / ".env")
-
-HEADLESS = os.environ.get("PLAYWRIGHT_HEADLESS", "true").lower() == "true"
-HAR_PATH = ROOT / "results" / "t4_playwright_capture.har"
-FINDINGS_PATH = ROOT / "results" / "t4_api_findings.md"
-STORAGE_STATE_A = ROOT / ".cache" / "t4_storage_a.json"
-STORAGE_STATE_B = ROOT / ".cache" / "t4_storage_b.json"
-
-
-async def capture_session(storage_state: Path | None, har_path: Path) -> None:
-    HAR_PATH.parent.mkdir(parents=True, exist_ok=True)
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=HEADLESS)
-        context = await browser.new_context(
-            record_har_path=str(har_path),
-            record_har_content="embed",
-            storage_state=str(storage_state) if storage_state and storage_state.exists() else None,
-        )
-        page = await context.new_page()
-        await page.goto("https://yun.139.com/")
-        print(
-            "[t4] browser open. Drive it through S1 same-account copy, "
-            "S2 cross-account migration (if exists), S3 upload. "
-            "Close the window when done.",
-            file=sys.stderr,
-        )
-        await page.wait_for_event("close", timeout=0)
-        await context.close()
-        await browser.close()
-
-
-def parse_har(har_path: Path) -> list[dict]:
-    data = json.loads(har_path.read_text(encoding="utf-8"))
-    entries = data.get("log", {}).get("entries", [])
-    findings: list[dict] = []
-    for e in entries:
-        req = e.get("request", {})
-        url = req.get("url", "")
-        if "yun.139.com" not in url and "caiyun" not in url and "139cloud" not in url:
-            continue
-        findings.append(
-            {
-                "method": req.get("method"),
-                "url": url,
-                "headers": {h["name"].lower(): h["value"] for h in req.get("headers", [])},
-                "post_data": (req.get("postData") or {}).get("text", ""),
-                "status": e.get("response", {}).get("status"),
-            }
-        )
-    return findings
-
-
-def render_findings(findings: list[dict]) -> str:
-    lines = [
-        "# T4 抓包发现",
-        "",
-        "Spec: docs/superpowers/specs/2026-05-23-caiyun-poc-design.md (Track 4)",
-        "",
-        "| Method | URL | Status | Has body |",
-        "|---|---|---|---|",
-    ]
-    for f in findings:
-        lines.append(
-            f"| {f['method']} | `{f['url']}` | {f['status']} | {'yes' if f['post_data'] else 'no'} |"
-        )
-    lines.append("")
-    lines.append("## Operator notes")
-    lines.append("")
-    lines.append("- Map each row above to scenario S1 / S2 / S3 inline.")
-    lines.append("- Highlight rows whose body or response suggests hash-based dedup.")
-    lines.append("- Flag rows requiring browser-only headers (e.g. signature, fingerprint).")
-    return "\n".join(lines) + "\n"
-
-
-async def main() -> int:
-    STORAGE_STATE_A.parent.mkdir(parents=True, exist_ok=True)
-    await capture_session(STORAGE_STATE_A, HAR_PATH)
-    findings = parse_har(HAR_PATH)
-    FINDINGS_PATH.write_text(render_findings(findings), encoding="utf-8")
-    print(f"[t4] wrote {HAR_PATH} and {FINDINGS_PATH} ({len(findings)} entries)")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
-```
-
-- [ ] **Step 2: Install Playwright Chromium**
+The parser was committed as part of the scaffold cleanup. Verify:
 
 ```bash
-cd poc/caiyun && pip install -r requirements.txt && playwright install chromium
+head -3 poc/caiyun/scripts/t4_har_parse.py
 ```
 
-Expected: `chromium-XXXX downloaded ...`.
+Expected first line: `"""Track 4: HAR parsing (no browser driver)."""`
 
-- [ ] **Step 3: First run (headed, to log in if no storage state exists)**
+If the docstring still mentions Playwright, the cleanup commit was not applied. Stop and reconcile before continuing.
+
+- [ ] **Step 2: Capture the HAR manually**
+
+Operator steps (any modern browser; Chrome example below):
+
+1. Open Chrome → log in to `https://yun.139.com/` with **account A**.
+2. F12 → Network panel. Click the trash-can to clear, then check "Preserve log".
+3. Trigger **S1 same-account copy/move**: in the 139 web UI copy or move a file from one folder to another.
+4. Trigger **S2 cross-account migration** if 139 offers any UI for it (family share, group space, transfer). If no such UI exists, record that in Step 4 below.
+5. Trigger **S3 upload**: upload any small local file.
+6. Right-click any request in the Network panel → "Save all as HAR with content".
+7. Save the file to `poc/caiyun/results/t4_playwright_capture.har`.
+
+Optional second pass with account B: re-run the same flow logged in as B and save to a second HAR, then run the parser twice with different `--har` paths.
+
+- [ ] **Step 3: Run the parser**
 
 ```bash
-cd poc/caiyun && PLAYWRIGHT_HEADLESS=false python scripts/t4_playwright_probe.py
+cd poc/caiyun && python scripts/t4_har_parse.py
 ```
 
-When the browser opens:
-1. Log in to 139 with account A.
-2. Manually trigger S1 (copy a file within the same account).
-3. Manually trigger S2 (try to migrate to account B if the web UI offers it; if not, note it).
-4. Manually trigger S3 (upload a small file).
-5. Close the browser.
+Expected: `[t4] parsed .../results/t4_playwright_capture.har -> .../results/t4_api_findings.md (N entries)` where `N > 0`.
 
-Then save the session for re-runs (optional): run a small helper or use the captured HAR alone.
-
-Expected: HAR file > 100 KB; findings markdown contains at least the S1/S3 endpoints.
+If the parser prints "HAR file not found", complete Step 2 first.
 
 - [ ] **Step 4: Hand-review findings**
 
-Open `results/t4_api_findings.md`. Annotate each row inline:
-- Tag with scenario (`S1`, `S2`, `S3`).
-- Note any browser-only auth header that would block server-side replay.
-- Flag candidate endpoints for T2.
+Open `results/t4_api_findings.md`. Annotate inline:
+
+- Tag each row with scenario (`S1`, `S2`, `S3`). Rows tagged S2 may be absent — if so, append a `## S2 verdict: unavailable in web UI` note.
+- Note any browser-only auth header that would block server-side replay (e.g. signed `mcloud-*` headers, fingerprint cookies).
+- Flag candidate endpoints for T2 with `**T2 candidate**`.
 
 - [ ] **Step 5: Verify src/ untouched and commit**
 
 ```bash
-git diff src/ | wc -l
-git add poc/caiyun/scripts/t4_playwright_probe.py poc/caiyun/results/t4_playwright_capture.har poc/caiyun/results/t4_api_findings.md
-git commit -m "feat(poc): t4 playwright dynamic capture"
+git diff src/ | wc -l   # must print 0
+git add poc/caiyun/scripts/t4_har_parse.py poc/caiyun/results/t4_api_findings.md
+git commit -m "feat(poc): t4 HAR-based dynamic capture"
 ```
+
+The HAR file itself is gitignored (contains login credentials). The reviewable artifact is `t4_api_findings.md`.
 
 ---
 
@@ -1340,7 +1236,7 @@ Spec: ../../docs/superpowers/specs/2026-05-23-caiyun-poc-design.md
 _Pick the winning path from 4.1. Justify the choice with hard numbers from the results files._
 
 Recommended architecture for `caiyun-rapid-copy`:
-- Deployment: _HTTP service vs Playwright sidecar_
+- Deployment: _HTTP service vs scripted browser sidecar_
 - Auth strategy: _OpenList-managed token refresh vs cached cookie jar_
 - Idempotency: _what does the upstream API guarantee_
 - Failure modes: _per-API error codes and mappings_

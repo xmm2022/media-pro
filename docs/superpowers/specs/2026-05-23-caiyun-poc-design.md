@@ -36,7 +36,7 @@ media-pro 已经完成 MVP（Task 1-12）与 Real Environment Integration（Task
 - 静态分析 `mobile-caiyun-autosave` 的油猴脚本与 Python CLI，提取 139 实际调用的 API 列表。
 - 用从 OpenList 取出的 139 凭据直调上述 API，验证服务端可用性。优先验证「服务端跨账号 copy」「同账号 server-side copy」「上传 / hash 秒传」三类非分享路径。
 - 探测 OpenList 自身能否承担「同账号目录间 copy」或「跨 storage copy」的角色。
-- 用 Playwright 在 139 网页跑「同账号复制 / 跨账号迁移 / 上传」三类非分享操作，抓取实际网络请求，回灌给 T2 做精准复现 —— Playwright 在本 POC 里定位为「动态抓包发现 API」，不再以「复现油猴分享转存」为目标。
+- 用浏览器 DevTools 在 139 网页跑「同账号复制 / 跨账号迁移 / 上传」三类非分享操作，把 Network 面板导出成 HAR，再由纯 Python 解析喂给 T2 做精准复现 —— T4 在本 POC 里定位为「动态抓包发现 API」，不再以「复现油猴分享转存」为目标。Playwright 不是必需依赖。
 - 分享转存路径只在前 3 类全失败时作为 fallback 评估，且报告必须明确把它降级。
 - 产出可行性报告 + media-pro 下一阶段改造 PR 草图。
 
@@ -53,7 +53,7 @@ media-pro 已经完成 MVP（Task 1-12）与 Real Environment Integration（Task
 POC 完成时必须满足：
 
 1. `poc/caiyun/reports/2026-05-23-caiyun-poc-report.md` 存在，且包含 4 条 track 各自的「可行 / 有条件可行 / 不可行」三态结论。
-2. 每条 track 在 `poc/caiyun/results/` 下留存可复现的原始证据（响应 JSON、日志、Playwright trace 等）。
+2. 每条 track 在 `poc/caiyun/results/` 下留存可复现的原始证据（响应 JSON、日志、HAR 解析摘要等；HAR 原文含登录凭据，不入 git）。
 3. 报告 4.2 节给出选定的 caiyun 后端实施路径与关键组件清单。
 4. 报告 4.3 节给出可执行的 media-pro 改造 PR 草图：文件清单、关键伪代码、Alembic 迁移摘要、受影响测试列表、预估代码量级。
 5. `poc/caiyun/README.md` 写明任何接手者重跑 POC 的最小步骤。
@@ -138,41 +138,39 @@ T1/T2/T3/T4 同时启动，最后产出对比表。
 
 产出：`poc/caiyun/results/t3_openlist_probe.md` —— 各场景结论 + 流量证据 + 吞吐数据。
 
-### Track 4：Playwright 动态抓包
+### Track 4：浏览器 HAR 动态抓包
 
-前置：docker 已有 chromium 镜像 + 2 个 139 账号登录态可注入（cookie 或 storageState）。
+前置：2 个 139 账号在任意现代浏览器登录（Chrome / Edge / Firefox 均可）。
 
-定位：**不复现油猴分享转存**。Playwright 在本 POC 里只负责「在 139 网页上跑非分享操作 + 抓取实际网络请求」，把抓到的请求回灌给 T2 做精准复现。这是 T1 静态分析的动态补集。
+定位：**不复现油猴分享转存**，**不引入 Playwright / Chromium 依赖**。T4 让 operator 在浏览器里跑 139 网页上的非分享操作，把 Network 面板导出 HAR，由纯 Python 脚本解析成 API 候选清单回灌给 T2。这是 T1 静态分析的动态补集。
 
 动作：
 
-- 注入账号 A 登录态，打开 `https://yun.139.com/`。
-- 按以下三类场景手工 / 脚本触发并抓 outbound 请求：
-  - **同账号文件复制 / 移动**：在网页内把 `/Movies/x.mkv` 复制 / 移动到 `/Cache/x.mkv`，抓 `XHR / fetch` 请求。
-  - **跨账号迁移**：如果 139 网页提供「家庭共享 / 群空间 / 跨账号迁移」入口，触发一次，抓请求。如果完全没有此类入口，记录「网页层无此能力」结论。
-  - **上传**：选一个本地小文件上传，抓 prepare → hash check → upload 全链路请求，重点看是否秒传命中。
-- 抓包结果按 `场景 -> 请求列表 -> 请求详情（URL / Method / Headers / Body / Response）` 整理。
-- 跑一次「同一文件二次上传」测秒传命中曲线。
-- 不再跑「单账号连续 50 次」「并发 N 浏览器」吞吐基线 —— 这些是分享转存模型才需要的指标，新定位下用 T2 cookie 直调的 RPS 数据更准确。
+- operator 打开 Chrome / Edge / Firefox → 登录 yun.139.com → F12 → Network → Preserve log。
+- 按以下三类场景手工触发并保留请求：
+  - **同账号文件复制 / 移动**：在网页内把 `/Movies/x.mkv` 复制 / 移动到 `/Cache/x.mkv`。
+  - **跨账号迁移**：如果 139 网页提供「家庭共享 / 群空间 / 跨账号迁移」入口，触发一次。如果完全没有此类入口，记录「网页层无此能力」结论。
+  - **上传**：选一个本地小文件上传，重点看 prepare → hash check → upload 全链路是否秒传命中。
+- 在 Network 面板「Save all as HAR with content」导出到 `results/t4_playwright_capture.har`（文件名保留是历史命名）。
+- 跑 `python scripts/t4_har_parse.py` 解析 HAR，得到 `results/t4_api_findings.md`。
+- HAR 文件含登录凭据，**不入 git**（`.gitignore` 已忽略 `results/*.har`）。
 
 产出：
 
-- `poc/caiyun/results/t4_playwright_capture.har` —— 完整 HAR 文件。
-- `poc/caiyun/results/t4_api_findings.md` —— 抽出来的 API 候选列表，格式与 T1 一致，便于合并喂给 T2。
+- `poc/caiyun/results/t4_api_findings.md` —— 按场景标注的 API 候选清单，格式与 T1 一致，便于合并喂给 T2。
 
 ### 工作目录结构
 
 ```
 poc/caiyun/
   README.md              ← 接手者入口：环境准备、依赖、运行顺序、产出位置
-  requirements.txt       ← httpx, pydantic, playwright, openlist 客户端等
-  docker-compose.yml     ← chromium（T4） + 可选 OpenList 二号实例
+  requirements.txt       ← httpx, pydantic, dotenv, pytest, respx
   .env.example           ← OPENLIST_BASE_URL / OPENLIST_ADMIN_TOKEN / 测试 storage 名
   scripts/
     t1_static_analysis.py
     t2_cookie_probe.py
     t3_openlist_probe.py
-    t4_playwright_probe.py
+    t4_har_parse.py
     common/
       openlist_creds.py  ← 从 OpenList admin API 取 139 凭据
       caiyun_api.py      ← 139 API thin wrapper
@@ -215,7 +213,7 @@ poc/caiyun/
 POC 不走严格 TDD（不是产品代码），但保持节奏：
 
 1. 写本 spec + 提交 + 初始化 `poc/caiyun/` 骨架（README、requirements、.env.example、空脚本占位）→ 同一个分支同一次推送。
-2. T1 静态分析 + T4 Playwright 动态抓包 + T3 OpenList 探测 三者并行启动（T1/T4 是 API 发现，T3 走 OpenList 平行路径）→ 各自产出 → 分次 commit。
+2. T1 静态分析 + T4 浏览器 HAR 抓包 + T3 OpenList 探测 三者并行启动（T1/T4 是 API 发现，T3 走 OpenList 平行路径）→ 各自产出 → 分次 commit。
 3. T2 cookie 直调验证 在 T1 + T4 产出 API 候选清单后启动，按 P1 → P2 → P3 优先级跑 → 产出 → commit。
 4. 汇总写报告（4.1 → 4.2 → 4.3 → 4.4）→ commit。
 5. 报告完成后向用户交付，决定下一个 spec（gateway caiyun 接入）。
@@ -235,7 +233,7 @@ POC 脚本不强制单元测试，但满足：
 | OpenList 内部 token 不能服务端直调 139 | T2 双探 + fallback 到用户手动 cookie；记录失败原因，写入报告 |
 | 139 风控触发后 cookie 锁定 | 4 条 track 共享同一组凭据时串行执行风险动作；触发后立即停 + 记录 |
 | OpenList 跨 storage copy 走流量而非秒传 | T3 必须看 outbound 流量曲线判定，结论写入报告 4.4，作为成本估算输入 |
-| Playwright 抓包覆盖度不足 | T4 三类场景按优先级跑，跑不到的场景在报告里记 N/A，不阻塞 T2 |
+| 浏览器抓包覆盖度不足 | T4 三类场景按优先级跑，跑不到的场景在报告里记 N/A，不阻塞 T2 |
 | POC 期间 OpenList 凭据失效 | 凭据从 OpenList 取，OpenList 自身负责刷新；脚本检测 401 时报错而非自动重试，避免污染数据 |
 | 误改 `src/gateway/` | 工作目录限定 `poc/caiyun/`；commit 前用 `git diff src/` 验证无改动 |
 
