@@ -20,21 +20,24 @@ def insert_drive(
     *,
     app,
     user_id: int,
-    cookie: str,
+    cookie: str | None,
     root_dir: str,
     drive_type: str = "115",
     enabled: bool = True,
     share_pool_enabled: bool = False,
     health_status: str = "unknown",
+    openlist_mount_path: str | None = None,
 ) -> UserDriveAccount:
+    cookie_encrypted = app.state.cookie_cipher.encrypt(cookie) if cookie is not None else None
     drive = UserDriveAccount(
         user_id=user_id,
         drive_type=drive_type,
-        cookie_encrypted=app.state.cookie_cipher.encrypt(cookie),
+        cookie_encrypted=cookie_encrypted,
         root_dir=root_dir,
         enabled=enabled,
         share_pool_enabled=share_pool_enabled,
         health_status=health_status,
+        openlist_mount_path=openlist_mount_path,
     )
     session.add(drive)
     session.flush()
@@ -113,6 +116,7 @@ def test_admin_drives_endpoint_lists_and_filters_drive_accounts(tmp_path: Path) 
             "health_status": "healthy",
             "last_checked_at": None,
             "cookie_preview": "UID=a...",
+            "openlist_mount_path": None,
         },
         {
             "id": 2,
@@ -124,6 +128,7 @@ def test_admin_drives_endpoint_lists_and_filters_drive_accounts(tmp_path: Path) 
             "health_status": "cooldown",
             "last_checked_at": None,
             "cookie_preview": "UID=a...",
+            "openlist_mount_path": None,
         },
         {
             "id": 3,
@@ -135,6 +140,7 @@ def test_admin_drives_endpoint_lists_and_filters_drive_accounts(tmp_path: Path) 
             "health_status": "healthy",
             "last_checked_at": None,
             "cookie_preview": "UID=b...",
+            "openlist_mount_path": None,
         },
     ]
     assert [item["id"] for item in user_filtered.json()] == [1, 2]
@@ -188,6 +194,7 @@ def test_admin_drive_patch_updates_operational_fields_and_cookie(tmp_path: Path)
         "health_status": "healthy",
         "last_checked_at": None,
         "cookie_preview": "UID=a...",
+        "openlist_mount_path": None,
     }
 
     with Session(engine) as session:

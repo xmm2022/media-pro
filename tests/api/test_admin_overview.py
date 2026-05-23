@@ -269,6 +269,7 @@ def test_admin_overview_endpoint_returns_stats_and_limited_attention_items(
                     "health_status": "healthy",
                     "last_checked_at": payload["drives"]["items"][0]["last_checked_at"],
                     "cookie_preview": "UID=a...",
+                    "openlist_mount_path": None,
                 },
                 {
                     "id": 3,
@@ -280,6 +281,7 @@ def test_admin_overview_endpoint_returns_stats_and_limited_attention_items(
                     "health_status": "invalid_cookie",
                     "last_checked_at": payload["drives"]["items"][1]["last_checked_at"],
                     "cookie_preview": "UID=b...",
+                    "openlist_mount_path": None,
                 },
             ],
         },

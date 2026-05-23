@@ -17,12 +17,32 @@ class UserRead(BaseModel):
     status: str
 
 
+class CaiyunDriveCredentials(BaseModel):
+    access_token: str
+    refresh_token: str = ""
+    account_type: str = "personal_new"
+
+
 class DriveAccountCreate(BaseModel):
     user_id: int
     drive_type: str
-    cookie: str
+    cookie: str | None = None
     root_dir: str
     share_pool_enabled: bool = False
+    caiyun: CaiyunDriveCredentials | None = None
+    mount_path: str | None = None
+
+    @model_validator(mode="after")
+    def validate_credentials_match_drive_type(self) -> "DriveAccountCreate":
+        if self.drive_type == "115":
+            if not self.cookie:
+                raise ValueError("cookie is required for drive_type=115")
+            return self
+        if self.drive_type == "caiyun":
+            if self.caiyun is None or not self.caiyun.access_token:
+                raise ValueError("caiyun.access_token is required for drive_type=caiyun")
+            return self
+        raise ValueError(f"unsupported drive_type: {self.drive_type}")
 
 
 class DriveAccountRead(BaseModel):
@@ -35,11 +55,13 @@ class DriveAccountRead(BaseModel):
     share_pool_enabled: bool
     health_status: str
     last_checked_at: datetime | None = None
-    cookie_preview: str
+    cookie_preview: str | None = None
+    openlist_mount_path: str | None = None
 
 
 class DriveAccountUpdate(BaseModel):
     cookie: str | None = None
+    caiyun: CaiyunDriveCredentials | None = None
     root_dir: str | None = None
     enabled: bool | None = None
     share_pool_enabled: bool | None = None
@@ -51,6 +73,7 @@ class DriveAccountUpdate(BaseModel):
             value is not None
             for value in (
                 self.cookie,
+                self.caiyun,
                 self.root_dir,
                 self.enabled,
                 self.share_pool_enabled,

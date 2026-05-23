@@ -12,6 +12,7 @@ from gateway.catalog_sync import CatalogSyncService
 from gateway.config import settings
 from gateway.db import get_session
 from gateway.integrations.drive115_health_client import Drive115HealthClient, DriveHealthResult
+from gateway.integrations.openlist_admin_client import OpenListAdminClient, OpenListAdminError
 from gateway.integrations.openlist_client import OpenListClient
 from gateway.models import PlaybackRecord, PoolObject, PoolObjectStatus, User, UserDriveAccount
 from gateway.schemas import (
@@ -301,11 +302,37 @@ async def _probe_drive(
         return await Drive115HealthClient().probe(cookie, drive.root_dir)
     if drive.drive_type == "alist":
         return await _probe_alist_drive(drive.root_dir)
+    if drive.drive_type == "caiyun":
+        return await _probe_caiyun_drive(drive)
     return DriveHealthResult(
         ok=False,
         error_code="unsupported_drive_type",
         detail=f"Drive type is not probeable: {drive.drive_type}",
     )
+
+
+async def _probe_caiyun_drive(drive: UserDriveAccount) -> DriveHealthResult:
+    if not drive.openlist_mount_path:
+        return DriveHealthResult(
+            ok=False,
+            error_code="mount_missing",
+            detail="drive has no mount_path",
+        )
+    admin_client = _build_openlist_admin_client()
+    try:
+        try:
+            await admin_client.fs_list(drive.openlist_mount_path)
+        except OpenListAdminError as exc:
+            if exc.status_code == 404:
+                return DriveHealthResult(ok=False, error_code="mount_missing", detail=exc.message)
+            if exc.status_code in {401, 403}:
+                return DriveHealthResult(ok=False, error_code="invalid_token", detail=exc.message)
+            return DriveHealthResult(ok=False, error_code="openlist_http_error", detail=exc.message)
+        except httpx.HTTPError as exc:
+            return DriveHealthResult(ok=False, error_code="openlist_admin_failed", detail=str(exc))
+    finally:
+        await admin_client.aclose()
+    return _successful_drive_probe()
 
 
 def _build_drive_probe_read(
@@ -421,7 +448,10 @@ def _build_drive_account_read(
     *,
     request: Request,
 ) -> DriveAccountRead:
-    cookie = request.app.state.cookie_cipher.decrypt(drive.cookie_encrypted)
+    cookie_preview = None
+    if drive.cookie_encrypted is not None:
+        cookie = request.app.state.cookie_cipher.decrypt(drive.cookie_encrypted)
+        cookie_preview = f"{cookie[:5]}..."
     return DriveAccountRead(
         id=drive.id,
         user_id=drive.user_id,
@@ -431,7 +461,8 @@ def _build_drive_account_read(
         share_pool_enabled=drive.share_pool_enabled,
         health_status=drive.health_status,
         last_checked_at=drive.last_checked_at,
-        cookie_preview=f"{cookie[:5]}...",
+        cookie_preview=cookie_preview,
+        openlist_mount_path=drive.openlist_mount_path,
     )
 
 
@@ -677,7 +708,7 @@ def list_drives(
 
 
 @router.post("/drives", response_model=DriveAccountRead, status_code=status.HTTP_201_CREATED)
-def create_drive(
+async def create_drive(
     payload: DriveAccountCreate,
     request: Request,
     session: Session = Depends(get_session),
@@ -685,10 +716,13 @@ def create_drive(
     if session.get(User, payload.user_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    if payload.drive_type == "caiyun":
+        return await _create_caiyun_drive(payload, request=request, session=session)
+
     drive = UserDriveAccount(
         user_id=payload.user_id,
         drive_type=payload.drive_type,
-        cookie_encrypted=request.app.state.cookie_cipher.encrypt(payload.cookie),
+        cookie_encrypted=request.app.state.cookie_cipher.encrypt(payload.cookie or ""),
         root_dir=payload.root_dir,
         share_pool_enabled=payload.share_pool_enabled,
     )
@@ -696,6 +730,59 @@ def create_drive(
     session.commit()
     session.refresh(drive)
     return _build_drive_account_read(drive, request=request)
+
+
+async def _create_caiyun_drive(
+    payload: DriveAccountCreate,
+    *,
+    request: Request,
+    session: Session,
+) -> DriveAccountRead:
+    mount_path = payload.mount_path or f"/caiyun-{payload.user_id}"
+    assert payload.caiyun is not None
+    admin_client = _build_openlist_admin_client()
+    try:
+        try:
+            await admin_client.create_storage(
+                driver="139Yun",
+                mount_path=mount_path,
+                addition=_build_caiyun_addition(payload.caiyun),
+            )
+        except OpenListAdminError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"error": "openlist_admin_failed", "message": exc.message},
+            ) from None
+    finally:
+        await admin_client.aclose()
+
+    drive = UserDriveAccount(
+        user_id=payload.user_id,
+        drive_type="caiyun",
+        cookie_encrypted=None,
+        root_dir=payload.root_dir,
+        share_pool_enabled=False,
+        openlist_mount_path=mount_path,
+    )
+    session.add(drive)
+    session.commit()
+    session.refresh(drive)
+    return _build_drive_account_read(drive, request=request)
+
+
+def _build_caiyun_addition(credentials) -> dict[str, str]:
+    return {
+        "authorization": credentials.access_token,
+        "refresh_token": credentials.refresh_token,
+        "type": credentials.account_type,
+    }
+
+
+def _build_openlist_admin_client() -> OpenListAdminClient:
+    return OpenListAdminClient(
+        base_url=settings.openlist_base_url,
+        admin_token=settings.openlist_admin_token,
+    )
 
 
 @router.post("/drives/{drive_id}/probe", response_model=DriveProbeRead)
@@ -758,7 +845,7 @@ async def probe_drives(
 
 
 @router.patch("/drives/{drive_id}", response_model=DriveAccountRead)
-def update_drive(
+async def update_drive(
     drive_id: int,
     payload: DriveAccountUpdate,
     request: Request,
@@ -773,6 +860,8 @@ def update_drive(
 
     if payload.cookie is not None:
         drive.cookie_encrypted = request.app.state.cookie_cipher.encrypt(payload.cookie)
+    if payload.caiyun is not None and drive.drive_type == "caiyun":
+        await _update_caiyun_drive_tokens(drive, payload=payload)
     if payload.root_dir is not None:
         drive.root_dir = payload.root_dir
     if payload.enabled is not None:
@@ -805,6 +894,40 @@ def update_drive(
     session.commit()
     session.refresh(drive)
     return _build_drive_account_read(drive, request=request)
+
+
+async def _update_caiyun_drive_tokens(
+    drive: UserDriveAccount,
+    *,
+    payload: DriveAccountUpdate,
+) -> None:
+    if not drive.openlist_mount_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "drive_missing_mount_path", "message": "caiyun drive has no mount_path"},
+        )
+    assert payload.caiyun is not None
+    admin_client = _build_openlist_admin_client()
+    try:
+        storages = await admin_client.list_storages()
+        match = next(
+            (storage for storage in storages if storage.mount_path == drive.openlist_mount_path),
+            None,
+        )
+        if match is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "mount_missing", "mount_path": drive.openlist_mount_path},
+            )
+        try:
+            await admin_client.update_storage(match.id, addition=_build_caiyun_addition(payload.caiyun))
+        except OpenListAdminError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"error": "openlist_admin_failed", "message": exc.message},
+            ) from None
+    finally:
+        await admin_client.aclose()
 
 
 @router.post("/drives/disable", response_model=DriveAccountBulkActionResponse)
@@ -898,13 +1021,27 @@ def delete_drives(
 
 
 @router.delete("/drives/{drive_id}", response_model=DriveAccountDeleteResponse)
-def delete_drive(
+async def delete_drive(
     drive_id: int,
     session: Session = Depends(get_session),
 ) -> DriveAccountDeleteResponse:
     drive = session.get(UserDriveAccount, drive_id)
     if drive is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Drive not found")
+
+    if drive.drive_type == "caiyun" and drive.openlist_mount_path:
+        admin_client = _build_openlist_admin_client()
+        try:
+            try:
+                await admin_client.delete_storage_by_mount(drive.openlist_mount_path)
+            except OpenListAdminError as exc:
+                if exc.status_code != 404:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail={"error": "openlist_admin_failed", "message": exc.message},
+                    ) from None
+        finally:
+            await admin_client.aclose()
 
     disabled_pool_objects = _disable_drive_pool_objects(
         session,
