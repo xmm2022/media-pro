@@ -31,6 +31,7 @@ class DriveAccountCreate(BaseModel):
     share_pool_enabled: bool = False
     caiyun: CaiyunDriveCredentials | None = None
     mount_path: str | None = None
+    adopt_existing: bool = False
 
     @model_validator(mode="after")
     def validate_credentials_match_drive_type(self) -> "DriveAccountCreate":
@@ -39,6 +40,10 @@ class DriveAccountCreate(BaseModel):
                 raise ValueError("cookie is required for drive_type=115")
             return self
         if self.drive_type == "caiyun":
+            if self.adopt_existing:
+                if not self.mount_path:
+                    raise ValueError("mount_path is required when adopt_existing=true")
+                return self
             if self.caiyun is None or not self.caiyun.access_token:
                 raise ValueError("caiyun.access_token is required for drive_type=caiyun")
             return self
@@ -57,6 +62,7 @@ class DriveAccountRead(BaseModel):
     last_checked_at: datetime | None = None
     cookie_preview: str | None = None
     openlist_mount_path: str | None = None
+    openlist_storage_managed: bool = True
 
 
 class DriveAccountUpdate(BaseModel):

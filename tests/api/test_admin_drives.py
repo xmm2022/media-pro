@@ -117,6 +117,7 @@ def test_admin_drives_endpoint_lists_and_filters_drive_accounts(tmp_path: Path) 
             "last_checked_at": None,
             "cookie_preview": "UID=a...",
             "openlist_mount_path": None,
+            "openlist_storage_managed": True,
         },
         {
             "id": 2,
@@ -129,6 +130,7 @@ def test_admin_drives_endpoint_lists_and_filters_drive_accounts(tmp_path: Path) 
             "last_checked_at": None,
             "cookie_preview": "UID=a...",
             "openlist_mount_path": None,
+            "openlist_storage_managed": True,
         },
         {
             "id": 3,
@@ -141,6 +143,7 @@ def test_admin_drives_endpoint_lists_and_filters_drive_accounts(tmp_path: Path) 
             "last_checked_at": None,
             "cookie_preview": "UID=b...",
             "openlist_mount_path": None,
+            "openlist_storage_managed": True,
         },
     ]
     assert [item["id"] for item in user_filtered.json()] == [1, 2]
@@ -195,6 +198,7 @@ def test_admin_drive_patch_updates_operational_fields_and_cookie(tmp_path: Path)
         "last_checked_at": None,
         "cookie_preview": "UID=a...",
         "openlist_mount_path": None,
+        "openlist_storage_managed": True,
     }
 
     with Session(engine) as session:

@@ -68,6 +68,7 @@ def test_create_caiyun_drive_calls_openlist_then_persists_locally(
     body = response.json()
     assert body["drive_type"] == "caiyun"
     assert body["openlist_mount_path"] == "/caiyun-alice"
+    assert body["openlist_storage_managed"] is True
     assert body["cookie_preview"] is None
     assert create_route.called is True
     sent_body = json.loads(create_route.calls.last.request.content)
@@ -83,7 +84,100 @@ def test_create_caiyun_drive_calls_openlist_then_persists_locally(
         drive = session.scalars(select(UserDriveAccount)).one()
     assert drive.cookie_encrypted is None
     assert drive.openlist_mount_path == "/caiyun-alice"
+    assert drive.openlist_storage_managed is True
     assert drive.share_pool_enabled is False
+
+
+@respx.mock
+def test_create_caiyun_drive_can_adopt_existing_openlist_storage(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    engine, app = _bootstrap(tmp_path, "caiyun-adopt-existing.db")
+    user_id = _seed_user(engine, "alice")
+    _configure_openlist_settings(monkeypatch)
+
+    list_route = respx.get("http://openlist.local/api/admin/storage/list").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "data": {
+                    "content": [
+                        {
+                            "id": 5,
+                            "mount_path": "/yidon",
+                            "driver": "139Yun",
+                            "addition": "{}",
+                        }
+                    ]
+                },
+            },
+        )
+    )
+    create_route = respx.post("http://openlist.local/api/admin/storage/create").mock(
+        return_value=httpx.Response(500, json={"code": 500, "message": "should not create"})
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/admin/drives",
+            json={
+                "user_id": user_id,
+                "drive_type": "caiyun",
+                "root_dir": "/",
+                "mount_path": "/yidon",
+                "adopt_existing": True,
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["drive_type"] == "caiyun"
+    assert body["openlist_mount_path"] == "/yidon"
+    assert body["openlist_storage_managed"] is False
+    assert list_route.called is True
+    assert create_route.called is False
+
+    with Session(engine) as session:
+        drive = session.scalars(select(UserDriveAccount)).one()
+    assert drive.cookie_encrypted is None
+    assert drive.openlist_mount_path == "/yidon"
+    assert drive.openlist_storage_managed is False
+
+
+@respx.mock
+def test_create_caiyun_drive_adopt_existing_returns_404_when_mount_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    engine, app = _bootstrap(tmp_path, "caiyun-adopt-missing.db")
+    user_id = _seed_user(engine, "alice")
+    _configure_openlist_settings(monkeypatch)
+
+    respx.get("http://openlist.local/api/admin/storage/list").mock(
+        return_value=httpx.Response(200, json={"code": 200, "data": {"content": []}})
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/admin/drives",
+            json={
+                "user_id": user_id,
+                "drive_type": "caiyun",
+                "root_dir": "/",
+                "mount_path": "/missing-yidon",
+                "adopt_existing": True,
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "error": "mount_missing",
+        "mount_path": "/missing-yidon",
+    }
+    with Session(engine) as session:
+        assert session.scalars(select(UserDriveAccount)).all() == []
 
 
 @respx.mock
@@ -139,6 +233,7 @@ def test_probe_caiyun_drive_returns_healthy_when_fs_list_returns_items(
             drive_type="caiyun",
             cookie_encrypted=None,
             openlist_mount_path="/caiyun-alice",
+            openlist_storage_managed=True,
             root_dir="/EmbyCache",
             enabled=True,
             share_pool_enabled=False,
@@ -182,6 +277,7 @@ def test_probe_caiyun_drive_maps_openlist_errors(tmp_path: Path, monkeypatch) ->
             drive_type="caiyun",
             cookie_encrypted=None,
             openlist_mount_path="/missing-caiyun",
+            openlist_storage_managed=True,
             root_dir="/EmbyCache",
         )
         session.add(drive)
@@ -216,6 +312,7 @@ def test_patch_caiyun_drive_updates_openlist_tokens(tmp_path: Path, monkeypatch)
             drive_type="caiyun",
             cookie_encrypted=None,
             openlist_mount_path="/caiyun-alice",
+            openlist_storage_managed=True,
             root_dir="/EmbyCache",
         )
         session.add(drive)
@@ -267,6 +364,56 @@ def test_patch_caiyun_drive_updates_openlist_tokens(tmp_path: Path, monkeypatch)
 
 
 @respx.mock
+def test_patch_caiyun_drive_rejects_token_update_for_adopted_storage(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    engine, app = _bootstrap(tmp_path, "caiyun-patch-unmanaged.db")
+    user_id = _seed_user(engine, "alice")
+    _configure_openlist_settings(monkeypatch)
+
+    with Session(engine) as session:
+        drive = UserDriveAccount(
+            user_id=user_id,
+            drive_type="caiyun",
+            cookie_encrypted=None,
+            openlist_mount_path="/yidon",
+            openlist_storage_managed=False,
+            root_dir="/",
+        )
+        session.add(drive)
+        session.commit()
+        drive_id = drive.id
+
+    list_route = respx.get("http://openlist.local/api/admin/storage/list").mock(
+        return_value=httpx.Response(500, json={"code": 500, "message": "should not list"})
+    )
+    update_route = respx.post("http://openlist.local/api/admin/storage/update").mock(
+        return_value=httpx.Response(500, json={"code": 500, "message": "should not update"})
+    )
+
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/api/admin/drives/{drive_id}",
+            json={
+                "caiyun": {
+                    "access_token": "tok-new",
+                    "refresh_token": "rt-new",
+                    "account_type": "personal_new",
+                }
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "error": "storage_unmanaged",
+        "message": "adopted OpenList storage credentials are managed outside media-pro",
+    }
+    assert list_route.called is False
+    assert update_route.called is False
+
+
+@respx.mock
 def test_delete_caiyun_drive_calls_openlist_then_deletes_locally(
     tmp_path: Path,
     monkeypatch,
@@ -281,6 +428,7 @@ def test_delete_caiyun_drive_calls_openlist_then_deletes_locally(
             drive_type="caiyun",
             cookie_encrypted=None,
             openlist_mount_path="/caiyun-alice",
+            openlist_storage_managed=True,
             root_dir="/EmbyCache",
         )
         session.add(drive)
@@ -315,5 +463,44 @@ def test_delete_caiyun_drive_calls_openlist_then_deletes_locally(
 
     assert response.status_code == 200
     assert delete_route.called is True
+    with Session(engine) as session:
+        assert session.scalars(select(UserDriveAccount)).all() == []
+
+
+@respx.mock
+def test_delete_caiyun_drive_keeps_adopted_openlist_storage(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    engine, app = _bootstrap(tmp_path, "caiyun-delete-unmanaged.db")
+    user_id = _seed_user(engine, "alice")
+    _configure_openlist_settings(monkeypatch)
+
+    with Session(engine) as session:
+        drive = UserDriveAccount(
+            user_id=user_id,
+            drive_type="caiyun",
+            cookie_encrypted=None,
+            openlist_mount_path="/yidon",
+            openlist_storage_managed=False,
+            root_dir="/",
+        )
+        session.add(drive)
+        session.commit()
+        drive_id = drive.id
+
+    list_route = respx.get("http://openlist.local/api/admin/storage/list").mock(
+        return_value=httpx.Response(500, json={"code": 500, "message": "should not list"})
+    )
+    delete_route = respx.post("http://openlist.local/api/admin/storage/delete").mock(
+        return_value=httpx.Response(500, json={"code": 500, "message": "should not delete"})
+    )
+
+    with TestClient(app) as client:
+        response = client.delete(f"/api/admin/drives/{drive_id}")
+
+    assert response.status_code == 200
+    assert list_route.called is False
+    assert delete_route.called is False
     with Session(engine) as session:
         assert session.scalars(select(UserDriveAccount)).all() == []

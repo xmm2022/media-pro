@@ -270,6 +270,7 @@ def test_admin_overview_endpoint_returns_stats_and_limited_attention_items(
                     "last_checked_at": payload["drives"]["items"][0]["last_checked_at"],
                     "cookie_preview": "UID=a...",
                     "openlist_mount_path": None,
+                    "openlist_storage_managed": True,
                 },
                 {
                     "id": 3,
@@ -282,6 +283,7 @@ def test_admin_overview_endpoint_returns_stats_and_limited_attention_items(
                     "last_checked_at": payload["drives"]["items"][1]["last_checked_at"],
                     "cookie_preview": "UID=b...",
                     "openlist_mount_path": None,
+                    "openlist_storage_managed": True,
                 },
             ],
         },

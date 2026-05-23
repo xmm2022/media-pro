@@ -463,6 +463,7 @@ def _build_drive_account_read(
         last_checked_at=drive.last_checked_at,
         cookie_preview=cookie_preview,
         openlist_mount_path=drive.openlist_mount_path,
+        openlist_storage_managed=drive.openlist_storage_managed,
     )
 
 
@@ -739,20 +740,33 @@ async def _create_caiyun_drive(
     session: Session,
 ) -> DriveAccountRead:
     mount_path = payload.mount_path or f"/caiyun-{payload.user_id}"
-    assert payload.caiyun is not None
     admin_client = _build_openlist_admin_client()
     try:
-        try:
+        if payload.adopt_existing:
+            storages = await admin_client.list_storages()
+            match = next(
+                (storage for storage in storages if storage.mount_path == mount_path),
+                None,
+            )
+            if match is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"error": "mount_missing", "mount_path": mount_path},
+                )
+            openlist_storage_managed = False
+        else:
+            assert payload.caiyun is not None
+            openlist_storage_managed = True
             await admin_client.create_storage(
                 driver="139Yun",
                 mount_path=mount_path,
                 addition=_build_caiyun_addition(payload.caiyun),
             )
-        except OpenListAdminError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={"error": "openlist_admin_failed", "message": exc.message},
-            ) from None
+    except OpenListAdminError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error": "openlist_admin_failed", "message": exc.message},
+        ) from None
     finally:
         await admin_client.aclose()
 
@@ -763,12 +777,12 @@ async def _create_caiyun_drive(
         root_dir=payload.root_dir,
         share_pool_enabled=False,
         openlist_mount_path=mount_path,
+        openlist_storage_managed=openlist_storage_managed,
     )
     session.add(drive)
     session.commit()
     session.refresh(drive)
     return _build_drive_account_read(drive, request=request)
-
 
 def _build_caiyun_addition(credentials) -> dict[str, str]:
     return {
@@ -906,6 +920,14 @@ async def _update_caiyun_drive_tokens(
             status_code=status.HTTP_409_CONFLICT,
             detail={"error": "drive_missing_mount_path", "message": "caiyun drive has no mount_path"},
         )
+    if not drive.openlist_storage_managed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "storage_unmanaged",
+                "message": "adopted OpenList storage credentials are managed outside media-pro",
+            },
+        )
     assert payload.caiyun is not None
     admin_client = _build_openlist_admin_client()
     try:
@@ -1029,7 +1051,11 @@ async def delete_drive(
     if drive is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Drive not found")
 
-    if drive.drive_type == "caiyun" and drive.openlist_mount_path:
+    if (
+        drive.drive_type == "caiyun"
+        and drive.openlist_mount_path
+        and drive.openlist_storage_managed
+    ):
         admin_client = _build_openlist_admin_client()
         try:
             try:

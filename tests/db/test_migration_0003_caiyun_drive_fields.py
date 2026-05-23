@@ -52,3 +52,30 @@ def test_user_drive_account_model_exposes_caiyun_fields() -> None:
     columns = UserDriveAccount.__table__.columns
     assert columns["cookie_encrypted"].nullable is True
     assert columns["openlist_mount_path"].nullable is True
+    assert columns["openlist_storage_managed"].nullable is False
+
+
+def test_migration_0004_adds_openlist_storage_managed_with_default(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "openlist-storage-managed.db"
+    database_url = f"sqlite:///{database_path}"
+
+    config = _alembic_config(database_url)
+    command.upgrade(config, "0004_openlist_storage_managed")
+
+    engine = create_engine(database_url, future=True)
+    columns = {
+        column["name"]: column
+        for column in inspect(engine).get_columns("user_drive_accounts")
+    }
+    assert "openlist_storage_managed" in columns
+    assert columns["openlist_storage_managed"]["nullable"] is False
+    assert columns["openlist_storage_managed"]["default"] in {"1", "true", "TRUE"}
+
+    command.downgrade(config, "0003_caiyun_drive_fields")
+    columns_after = {
+        column["name"]: column
+        for column in inspect(engine).get_columns("user_drive_accounts")
+    }
+    assert "openlist_storage_managed" not in columns_after

@@ -55,6 +55,7 @@ class UserDriveAccount(Base):
     health_status: Mapped[str] = mapped_column(String(32), default="unknown")
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     openlist_mount_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    openlist_storage_managed: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class MediaItem(Base):
