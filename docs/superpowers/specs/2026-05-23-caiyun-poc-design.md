@@ -34,9 +34,10 @@ media-pro 已经完成 MVP（Task 1-12）与 Real Environment Integration（Task
 ### 这阶段要做的事
 
 - 静态分析 `mobile-caiyun-autosave` 的油猴脚本与 Python CLI，提取 139 实际调用的 API 列表。
-- 用从 OpenList 取出的 139 凭据直调上述 API，验证服务端可用性。
+- 用从 OpenList 取出的 139 凭据直调上述 API，验证服务端可用性。优先验证「服务端跨账号 copy」「同账号 server-side copy」「上传 / hash 秒传」三类非分享路径。
 - 探测 OpenList 自身能否承担「同账号目录间 copy」或「跨 storage copy」的角色。
-- 用 Playwright headless 跑一次完整流程，作为吞吐 / 风控基线，即便前面已经跑通也保留作为对照。
+- 用 Playwright 在 139 网页跑「同账号复制 / 跨账号迁移 / 上传」三类非分享操作，抓取实际网络请求，回灌给 T2 做精准复现 —— Playwright 在本 POC 里定位为「动态抓包发现 API」，不再以「复现油猴分享转存」为目标。
+- 分享转存路径只在前 3 类全失败时作为 fallback 评估，且报告必须明确把它降级。
 - 产出可行性报告 + media-pro 下一阶段改造 PR 草图。
 
 ### 这阶段不做的事
@@ -62,7 +63,7 @@ POC 完成时必须满足：
 
 ### 路线 A：先静态分析，后动态验证
 
-T1 → T2/T3 → T4 串行步进，每一步可独立止损。
+T1 静态分析 → T2/T3/T4 动态验证 步进，每一步可独立止损。
 
 优点：最低成本起手，Step 1 几乎一定能拿到 80% 答案。
 缺点：节奏不算最快。
@@ -76,13 +77,14 @@ T1/T2/T3/T4 同时启动，最后产出对比表。
 
 ### 选定路线
 
-**路线 A 的步进顺序 + T4 默认启用作为吞吐 / 风控基线**。
+**路线 A 的步进顺序 + T4 重新定位为 API 动态抓包工具，与 T1/T3 并行启动**。
 
 理由：
 
-- T1 + T2 多半能给出主路径结论，不需要 T4 来回答「能不能跑」。
-- 但 T4 单独跑出来的吞吐 / 风控曲线，本身就是后续容量评估的输入，即便主路径走通也有用。
-- T3 与 T2 时间窗口重合（都需要 cookie / OpenList），并行成本低。
+- T1 + T4 同时跑可以最大化 API 发现面：静态读源码 + 动态抓真实请求 = 互补。
+- T2 必须在 T1 + T4 之后跑，因为它要复现两者抽出的 API 清单。
+- T3 与 T1 / T4 无依赖，可并行，节省总时长。
+- 分享转存路径不作为主推方向（用户偏好），仅在前 3 类 API 全部失败时由 T2 在 P3 优先级上补测。
 
 ## 设计
 
@@ -103,16 +105,17 @@ T1/T2/T3/T4 同时启动，最后产出对比表。
 
 ### Track 2：cookie / token 直调验证
 
-前置：T1 产出 API 清单 + OpenList 已配 2 个 139 storage。
+前置：T1 产出 API 清单 + OpenList 已配 2 个 139 storage（两个不同账号）。
 
 动作：
 
 - 启动时调 OpenList admin API（`/api/admin/storage/list` 或等价）取 2 个 139 storage 的认证字段。可能是 OAuth `access_token + refresh_token`，也可能是裸 cookie。
-- 用 httpx 复现 T1 清单里的关键动作链路：
-  - 识别分享链接（`POST /orchestration/personalCloud-rebuild/...` 或等价）
-  - 跨账号转存 / 同账号 copy（`POST /orchestration/personalCloud-rebuild/share/v1.0/saveContents` 或等价）
-  - 查询目录（`POST /orchestration/personalCloud/.../catalog`）
-  - 查询任务状态（轮询）
+- 用 httpx 复现 T1 + T4 喂过来的 API 调用，按优先级：
+  - **P1 服务端同账号 copy**（账号 A 内部目录间复制，`POST /orchestration/personalCloud-rebuild/.../copy` 或等价）
+  - **P1 服务端跨账号 copy / 迁移**（账号 A → 账号 B，可能走家庭共享、群空间或迁移接口）
+  - **P1 上传 / hash 秒传**（先调 prepare 接口看 hash 命中是否能跳过传输）
+  - **P2 列目录与查任务状态**（轮询、状态机）
+  - **P3 分享识别 + 分享转存**（fallback，最后试）
 - 每个 API 在「OpenList 凭据」和「浏览器 cookie」两种认证形态下各测一次，判断认证模型。
 - 用「hash 命中」和「全新文件」两种样本测秒传 / 走流量行为。
 - 记录速率限制：连续 N 次后是否触发风控、间隔多久放行。
@@ -135,18 +138,27 @@ T1/T2/T3/T4 同时启动，最后产出对比表。
 
 产出：`poc/caiyun/results/t3_openlist_probe.md` —— 各场景结论 + 流量证据 + 吞吐数据。
 
-### Track 4：Playwright 兜底基线
+### Track 4：Playwright 动态抓包
 
-前置：docker 已有 chromium 镜像。
+前置：docker 已有 chromium 镜像 + 2 个 139 账号登录态可注入（cookie 或 storageState）。
+
+定位：**不复现油猴分享转存**。Playwright 在本 POC 里只负责「在 139 网页上跑非分享操作 + 抓取实际网络请求」，把抓到的请求回灌给 T2 做精准复现。这是 T1 静态分析的动态补集。
 
 动作：
 
-- 把 `mobile-caiyun-autosave` 油猴脚本流程在 Playwright headless 下重放。分享链接来源：用 139 账号 A 把一个文件做成分享 → 把分享链接喂给账号 B 重放，能持续生成测试样本而不依赖外部链接。
-- 单账号连续转存 50 次，记录：成功率、平均耗时、风控触发位置、内存峰值。
-- 并发 2 / 5 / 10 浏览器实例分别测吞吐。
-- 测「分享链接已转存过」与「全新分享链接」的延迟差，判断是否秒成。
+- 注入账号 A 登录态，打开 `https://yun.139.com/`。
+- 按以下三类场景手工 / 脚本触发并抓 outbound 请求：
+  - **同账号文件复制 / 移动**：在网页内把 `/Movies/x.mkv` 复制 / 移动到 `/Cache/x.mkv`，抓 `XHR / fetch` 请求。
+  - **跨账号迁移**：如果 139 网页提供「家庭共享 / 群空间 / 跨账号迁移」入口，触发一次，抓请求。如果完全没有此类入口，记录「网页层无此能力」结论。
+  - **上传**：选一个本地小文件上传，抓 prepare → hash check → upload 全链路请求，重点看是否秒传命中。
+- 抓包结果按 `场景 -> 请求列表 -> 请求详情（URL / Method / Headers / Body / Response）` 整理。
+- 跑一次「同一文件二次上传」测秒传命中曲线。
+- 不再跑「单账号连续 50 次」「并发 N 浏览器」吞吐基线 —— 这些是分享转存模型才需要的指标，新定位下用 T2 cookie 直调的 RPS 数据更准确。
 
-产出：`poc/caiyun/results/t4_playwright_baseline.md` —— 吞吐、稳定性、资源消耗指标。
+产出：
+
+- `poc/caiyun/results/t4_playwright_capture.har` —— 完整 HAR 文件。
+- `poc/caiyun/results/t4_api_findings.md` —— 抽出来的 API 候选列表，格式与 T1 一致，便于合并喂给 T2。
 
 ### 工作目录结构
 
@@ -185,8 +197,8 @@ poc/caiyun/
 
 `poc/caiyun/reports/2026-05-23-caiyun-poc-report.md` 章节固定如下：
 
-- **4.1 路径结论对照表**：4 条 track × {API 清单、认证形态、秒传命中、吞吐、风控、可行性三态}。
-- **4.2 选定后端实施路径**：基于 4.1，给出「caiyun-rapid-copy 后端走哪一条」「关键组件」「部署形态」。
+- **4.1 路径结论对照表**：T1 / T2 / T3 三条候选路径 × {API 清单、认证形态、秒传命中、吞吐、风控、可行性三态}。T4 单列「抓包发现」一节，不参与路径三态评价，仅说明它为 T2 提供了哪些新 API。
+- **4.2 选定后端实施路径**：基于 4.1，给出「caiyun-rapid-copy 后端走哪一条」「关键组件」「部署形态」。优先推服务端跨账号 / 同账号 copy，分享转存仅作 fallback 评估。
 - **4.3 media-pro 改造 PR 草图**：
   - 文件清单（新增 / 修改 / 删除）
   - `UserDriveAccount.drive_type` 与 `PoolObject.drive_type` 的 `caiyun` 值如何 ingest
@@ -203,8 +215,8 @@ poc/caiyun/
 POC 不走严格 TDD（不是产品代码），但保持节奏：
 
 1. 写本 spec + 提交 + 初始化 `poc/caiyun/` 骨架（README、requirements、.env.example、空脚本占位）→ 同一个分支同一次推送。
-2. T1 静态分析 → 产出 API 清单 → commit。
-3. T2 + T3 + T4 并行启动（共用 OpenList 凭据获取代码；T4 独立 Playwright 环境，不与 T2/T3 共享同一账号瞬时风控状态）→ 各自产出 → 分次 commit。
+2. T1 静态分析 + T4 Playwright 动态抓包 + T3 OpenList 探测 三者并行启动（T1/T4 是 API 发现，T3 走 OpenList 平行路径）→ 各自产出 → 分次 commit。
+3. T2 cookie 直调验证 在 T1 + T4 产出 API 候选清单后启动，按 P1 → P2 → P3 优先级跑 → 产出 → commit。
 4. 汇总写报告（4.1 → 4.2 → 4.3 → 4.4）→ commit。
 5. 报告完成后向用户交付，决定下一个 spec（gateway caiyun 接入）。
 
@@ -223,7 +235,7 @@ POC 脚本不强制单元测试，但满足：
 | OpenList 内部 token 不能服务端直调 139 | T2 双探 + fallback 到用户手动 cookie；记录失败原因，写入报告 |
 | 139 风控触发后 cookie 锁定 | 4 条 track 共享同一组凭据时串行执行风险动作；触发后立即停 + 记录 |
 | OpenList 跨 storage copy 走流量而非秒传 | T3 必须看 outbound 流量曲线判定，结论写入报告 4.4，作为成本估算输入 |
-| Playwright 在风控样本上失败率高 | T4 不追求高成功率，只记录基线数字，作为容量上限参考 |
+| Playwright 抓包覆盖度不足 | T4 三类场景按优先级跑，跑不到的场景在报告里记 N/A，不阻塞 T2 |
 | POC 期间 OpenList 凭据失效 | 凭据从 OpenList 取，OpenList 自身负责刷新；脚本检测 401 时报错而非自动重试，避免污染数据 |
 | 误改 `src/gateway/` | 工作目录限定 `poc/caiyun/`；commit 前用 `git diff src/` 验证无改动 |
 
