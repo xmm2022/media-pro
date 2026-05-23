@@ -34,6 +34,7 @@ def test_recover_expired_cooldowns_normalizes_enum_backed_statuses() -> None:
 
 
 def test_recover_expired_cooldowns_promotes_naive_expired_datetimes() -> None:
-    rows = [{"status": "cooldown", "cooldown_until": datetime.now() - timedelta(minutes=1)}]
+    expired_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=1)
+    rows = [{"status": "cooldown", "cooldown_until": expired_utc_naive}]
 
     assert recover_expired_cooldowns(rows) == ["ready"]
