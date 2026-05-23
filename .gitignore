@@ -3,3 +3,4 @@
 __pycache__/
 *.py[cod]
 gateway.db
+HANDOFF.md
