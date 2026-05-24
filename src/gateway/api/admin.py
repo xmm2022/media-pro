@@ -19,6 +19,7 @@ from gateway.models import (
     PlaybackRecord,
     PoolObject,
     PoolObjectStatus,
+    TransferRoute,
     TransferJob,
     User,
     UserDriveAccount,
@@ -40,6 +41,7 @@ from gateway.schemas import (
     DriveTypeCapabilitiesRead,
     DriveTypeRead,
     MediaItemRead,
+    PlaybackRecordRead,
     PoolObjectBulkActionRequest,
     PoolObjectBulkActionResponse,
     PoolObjectRead,
@@ -124,6 +126,29 @@ def admin_stats(session: Session = Depends(get_session)) -> dict[str, int]:
         route.value if hasattr(route, "value") else str(route) for route in routes
     ]
     return summarize_routes(normalized_routes)
+
+
+@router.get("/playback-records", response_model=list[PlaybackRecordRead])
+def list_playback_records(
+    user_id: int | None = None,
+    media_id: int | None = None,
+    route: TransferRoute | None = None,
+    success: bool | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+) -> list[PlaybackRecordRead]:
+    statement = select(PlaybackRecord).order_by(PlaybackRecord.id).offset(offset).limit(limit)
+    if user_id is not None:
+        statement = statement.where(PlaybackRecord.user_id == user_id)
+    if media_id is not None:
+        statement = statement.where(PlaybackRecord.media_id == media_id)
+    if route is not None:
+        statement = statement.where(PlaybackRecord.route == route)
+    if success is not None:
+        statement = statement.where(PlaybackRecord.success.is_(success))
+    records = session.scalars(statement).all()
+    return [PlaybackRecordRead.model_validate(record) for record in records]
 
 
 @router.get("/overview", response_model=AdminOverviewRead)

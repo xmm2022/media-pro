@@ -257,6 +257,17 @@ class TransferJobRead(BaseModel):
     attempt_no: int
 
 
+class PlaybackRecordRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    media_id: int
+    route: str
+    success: bool
+    latency_ms: int
+
+
 class DriveOverviewSectionRead(BaseModel):
     stats: DriveStatsRead
     attention_total: int
