@@ -14,7 +14,7 @@ from gateway.db import get_session
 from gateway.integrations.drive115_health_client import Drive115HealthClient, DriveHealthResult
 from gateway.integrations.openlist_admin_client import OpenListAdminClient, OpenListAdminError
 from gateway.integrations.openlist_client import OpenListClient
-from gateway.models import PlaybackRecord, PoolObject, PoolObjectStatus, User, UserDriveAccount
+from gateway.models import MediaItem, PlaybackRecord, PoolObject, PoolObjectStatus, User, UserDriveAccount
 from gateway.schemas import (
     AdminOverviewRead,
     CatalogSyncRequest,
@@ -31,6 +31,7 @@ from gateway.schemas import (
     DriveAccountUpdate,
     DriveTypeCapabilitiesRead,
     DriveTypeRead,
+    MediaItemRead,
     PoolObjectBulkActionRequest,
     PoolObjectBulkActionResponse,
     PoolObjectRead,
@@ -765,6 +766,23 @@ def create_user(payload: UserCreate, session: Session = Depends(get_session)) ->
 def list_users(session: Session = Depends(get_session)) -> list[UserRead]:
     users = session.scalars(select(User).order_by(User.id)).all()
     return [UserRead.model_validate(user) for user in users]
+
+
+@router.get("/media-items", response_model=list[MediaItemRead])
+def list_media_items(
+    q: str | None = None,
+    fingerprint: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+) -> list[MediaItemRead]:
+    statement = select(MediaItem).order_by(MediaItem.id).offset(offset).limit(limit)
+    if q:
+        statement = statement.where(MediaItem.source_path.contains(q))
+    if fingerprint:
+        statement = statement.where(MediaItem.fingerprint == fingerprint)
+    media_items = session.scalars(statement).all()
+    return [MediaItemRead.model_validate(media_item) for media_item in media_items]
 
 
 @router.get("/drives", response_model=list[DriveAccountRead])

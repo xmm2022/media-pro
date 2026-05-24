@@ -186,6 +186,18 @@ class CatalogSyncResponse(BaseModel):
     updated: int
 
 
+class MediaItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_path: str
+    source_file_id: str | None
+    size: int
+    mtime: datetime | None = None
+    fingerprint: str
+    openlist_path: str
+
+
 class PoolObjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
