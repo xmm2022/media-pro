@@ -5,6 +5,7 @@ from threading import Lock
 from fastapi import FastAPI
 
 from gateway.api.admin import router as admin_router
+from gateway.api.admin_ui import router as admin_ui_router
 from gateway.api.health import router as health_router
 from gateway.api.playback import router as playback_router
 from gateway.config import settings
@@ -30,6 +31,7 @@ def create_app(database_url: str | None = None, cookie_secret: str | None = None
     app.state.cookie_cipher = CookieCipher(cookie_secret or settings.cookie_secret)
     app.state.playback_token_cipher = PlaybackTokenCipher(cookie_secret or settings.cookie_secret)
     app.include_router(health_router)
+    app.include_router(admin_ui_router)
     app.include_router(admin_router)
     app.include_router(playback_router)
     return app

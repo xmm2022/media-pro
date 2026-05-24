@@ -688,6 +688,12 @@ def create_user(payload: UserCreate, session: Session = Depends(get_session)) ->
     return UserRead.model_validate(user)
 
 
+@router.get("/users", response_model=list[UserRead])
+def list_users(session: Session = Depends(get_session)) -> list[UserRead]:
+    users = session.scalars(select(User).order_by(User.id)).all()
+    return [UserRead.model_validate(user) for user in users]
+
+
 @router.get("/drives", response_model=list[DriveAccountRead])
 def list_drives(
     request: Request,

@@ -4,12 +4,12 @@
 
 ## 当前阶段
 
-当前仓库还没有前端页面，项目形态是“后端 API + 数据模型 + 验证脚本 + 测试集”。
+当前仓库包含后端 API、数据模型、验证脚本、测试集，以及一个内置的最小管理页。
 
 可以把它理解为：
 
-- 已经具备本地启动、接口联调、数据库持久化、基础播放决策和运维验证能力
-- 还没有 Web 管理后台、用户认证、真实生产部署方案和完整业务闭环
+- 已经具备本地启动、接口联调、数据库持久化、基础播放决策、最小管理页和运维验证能力
+- 还没有登录认证、权限控制、真实生产部署方案和完整业务闭环
 - 更适合当前阶段作为技术验证版 / 联调版，而不是直接当最终生产系统
 
 ## MVP Route Order
@@ -28,12 +28,12 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 - transfer idempotency key 生成
 - 播放预算控制
 - 管理员 stats 持久化查询
+- 内置 `/admin` 最小管理页
 - worker cooldown 恢复 helper
 - 本地 smoke 校验脚本与完整测试集
 
 ## 当前还没有实现
 
-- 前端管理页面
 - 登录认证、权限控制、多角色管理
 - 真实 OpenList / 115 环境下的全链路联调闭环
 - 完整的任务调度、后台 worker 运行体系
@@ -56,6 +56,7 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 ```text
 src/gateway/
   api/                   HTTP 接口
+  api/admin_ui.py         内置最小管理页
   integrations/          OpenList / rapid-copy 适配器
   models.py              数据模型
   db.py                  数据库与 session 管理
@@ -91,7 +92,9 @@ uv run uvicorn gateway.main:app --reload
 启动后默认服务入口为：
 
 - `GET /health`
+- `GET /admin`
 - `POST /api/admin/users`
+- `GET /api/admin/users`
 - `GET /api/admin/drives`
 - `POST /api/admin/drives`
 - `POST /api/admin/drives/{drive_id}/probe`
@@ -815,52 +818,47 @@ uv run python scripts/validate_caiyun_source_copy.py
 
 ## 下一阶段建议
 
-下一阶段不建议先做花哨前端，而是建议按下面顺序推进：
+最小管理页已经内置在 `/admin`。下一阶段建议按下面顺序推进：
 
-### 第一优先级：接真实环境，打通全链路
+### 第一优先级：认证与权限
 
-目标是把现在的“本地 MVP”推进为“真实业务联调版”：
+当前 `/admin` 和 `/api/admin/*` 还没有登录保护，适合本机或受控内网联调，不适合直接暴露到公网。
 
-- 接入真实 OpenList 服务
-- 接入真实 rapid-copy / 115 环境
-- 跑通真实 catalog 同步
-- 跑通真实 playback route 决策
-- 让 `/api/admin/users`、`/api/admin/drives`、`/api/admin/stats` 真正服务于真实数据
+建议先补：
 
-这是下一阶段最关键的事。因为如果真实链路没通，前端做出来也只是空壳。
+- 管理员登录
+- session / token 鉴权
+- 管理 API 权限保护
+- 敏感操作二次确认或审计
 
-### 第二优先级：补最小前端管理页
+### 第二优先级：生产化部署
 
-当真实链路基本稳定后，再做一个最小管理后台，至少覆盖：
+把当前可联调版本推进为可长期运行版本：
 
-- 用户列表 / 创建用户
-- drive 列表 / 录入 drive
-- stats 查看
-- 手工触发验证或同步
+- Docker / systemd / 反向代理部署
+- 配置校验与启动前检查
+- 日志、审计、监控、告警
+- 数据库备份与迁移流程
 
-这时前端的价值会非常直接，因为后端接口已经有实际数据和真实行为可以展示。
+### 第三优先级：管理页增强
 
-### 第三优先级：生产化加固
+在认证和部署边界清楚之后，再扩展 `/admin`：
 
-在“真实链路可用 + 最小前端可用”之后，再补这些：
-
-- 登录认证与权限
-- 更明确的错误码与异常处理
-- 日志与审计落库
-- Docker / systemd / 部署脚本
-- 配置校验
-- 监控、告警、限流
+- 分页、搜索、排序
+- 更完整的错误提示
+- 批量操作确认
+- 播放记录和 transfer job 页面
 
 ## 当前结论
 
-当前项目已经是一个“能跑、能测、能继续接真实环境”的后端 MVP，但还不是最终产品。
+当前项目已经是一个“能跑、能测、能联调、有最小管理入口”的技术验证版，但还不是最终产品。
 
 一句话概括当前状态：
 
 - 不是空仓库
 - 不是纯 demo
 - 也还不是完整成品
-- 它现在最适合做下一阶段真实链路接入和最小前端建设的基础底座
+- 它现在最适合继续做认证、部署和生产化加固
 
 ## 仓库位置
 

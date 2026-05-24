@@ -47,6 +47,23 @@ def test_create_user_and_drive_account(tmp_path: Path) -> None:
     assert drive_response.json()["cookie_preview"] == "UID=1..."
 
 
+def test_list_users_returns_users_in_id_order(tmp_path: Path) -> None:
+    client = make_client(tmp_path, "admin-users-list.db")
+
+    first_response = client.post("/api/admin/users", json={"username": "alice", "status": "active"})
+    second_response = client.post("/api/admin/users", json={"username": "bob", "status": "disabled"})
+
+    response = client.get("/api/admin/users")
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    assert response.status_code == 200
+    assert response.json() == [
+        {"id": 1, "username": "alice", "status": "active"},
+        {"id": 2, "username": "bob", "status": "disabled"},
+    ]
+
+
 def test_create_drive_rejects_unknown_user(tmp_path: Path) -> None:
     client = make_client(tmp_path, "unknown-user.db")
 
