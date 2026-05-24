@@ -34,6 +34,7 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 - transfer idempotency key 生成
 - 播放预算控制
 - 管理员 stats 持久化查询
+- provider capability API 与媒体/播放/转存诊断读 API
 - 内置 `/admin` 最小管理页
 - 可选管理员登录、session cookie 鉴权与退出登录
 - worker cooldown 恢复 helper
@@ -44,7 +45,7 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 
 - 用户中心、用户登录和用户自助绑定云盘
 - 正式产品级管理后台
-- provider capability API 与播放/转存诊断读模型
+- 更完整的播放诊断解释模型与对应 UI 工作流
 - 多角色权限控制、细粒度权限策略
 - 真实 OpenList / 115 环境下的全链路联调闭环
 - 完整的任务调度、后台 worker 运行体系
