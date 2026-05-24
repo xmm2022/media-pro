@@ -9,7 +9,8 @@
 可以把它理解为：
 
 - 已经具备本地启动、接口联调、数据库持久化、基础播放决策、最小管理页和运维验证能力
-- 还没有登录认证、权限控制、真实生产部署方案和完整业务闭环
+- 已经具备可选的管理员登录保护；设置 `GATEWAY_ADMIN_PASSWORD` 后会保护 `/admin` 和 `/api/admin/*`
+- 还没有多角色权限控制、真实生产部署方案和完整业务闭环
 - 更适合当前阶段作为技术验证版 / 联调版，而不是直接当最终生产系统
 
 ## MVP Route Order
@@ -29,12 +30,13 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 - 播放预算控制
 - 管理员 stats 持久化查询
 - 内置 `/admin` 最小管理页
+- 可选管理员登录、session cookie 鉴权与退出登录
 - worker cooldown 恢复 helper
 - 本地 smoke 校验脚本与完整测试集
 
 ## 当前还没有实现
 
-- 登录认证、权限控制、多角色管理
+- 多角色权限控制、细粒度权限策略
 - 真实 OpenList / 115 环境下的全链路联调闭环
 - 完整的任务调度、后台 worker 运行体系
 - Docker / systemd / 反向代理等部署方案
@@ -56,6 +58,7 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 ```text
 src/gateway/
   api/                   HTTP 接口
+  api/admin_auth.py       可选管理员登录保护
   api/admin_ui.py         内置最小管理页
   integrations/          OpenList / rapid-copy 适配器
   models.py              数据模型
@@ -93,6 +96,10 @@ uv run uvicorn gateway.main:app --reload
 
 - `GET /health`
 - `GET /admin`
+- `GET /admin/login`
+- `POST /api/admin/login`
+- `GET /api/admin/session`
+- `POST /api/admin/logout`
 - `POST /api/admin/users`
 - `GET /api/admin/users`
 - `GET /api/admin/drives`
@@ -129,6 +136,13 @@ uv run uvicorn gateway.main:app --reload
 - `GATEWAY_COOKIE_SECRET`
   - 用于加密保存 drive cookie
   - 必须替换成你自己的随机长字符串
+- `GATEWAY_ADMIN_PASSWORD`
+  - 可选管理员登录密码
+  - 为空时 `/admin` 和 `/api/admin/*` 保持本地联调免登录
+  - 设置后 `/admin` 会跳转到 `/admin/login`，`/api/admin/*` 未登录会返回 `401`
+- `GATEWAY_ADMIN_SESSION_TTL_SECONDS`
+  - 管理员 session cookie 有效期
+  - 默认值：`86400`
 - `GATEWAY_OPENLIST_BASE_URL`
   - OpenList 服务地址
 - `GATEWAY_OPENLIST_TOKEN`
@@ -157,7 +171,7 @@ uv run uvicorn gateway.main:app --reload
 - `GATEWAY_RAPID_COPY_TARGET_PATH`
   - `pool / P2P` 或 `source_copy / O2P` 的目标路径
 
-Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through the admin API. Keep `GATEWAY_DATABASE_URL` pointed at the SQLite file or database you want the gateway to manage.
+Set `GATEWAY_COOKIE_SECRET` in `.env` before storing real drive cookies through the admin API. Set `GATEWAY_ADMIN_PASSWORD` before exposing `/admin` or `/api/admin/*` beyond a local trusted environment. Keep `GATEWAY_DATABASE_URL` pointed at the SQLite file or database you want the gateway to manage.
 
 如果已有 `gateway.db`，升级新版代码后先备份并迁移：
 
@@ -820,29 +834,27 @@ uv run python scripts/validate_caiyun_source_copy.py
 
 最小管理页已经内置在 `/admin`。下一阶段建议按下面顺序推进：
 
-### 第一优先级：认证与权限
+### 第一优先级：生产化部署
 
-当前 `/admin` 和 `/api/admin/*` 还没有登录保护，适合本机或受控内网联调，不适合直接暴露到公网。
-
-建议先补：
-
-- 管理员登录
-- session / token 鉴权
-- 管理 API 权限保护
-- 敏感操作二次确认或审计
-
-### 第二优先级：生产化部署
-
-把当前可联调版本推进为可长期运行版本：
+当前 `/admin` 和 `/api/admin/*` 已支持可选登录保护。把当前可联调版本推进为可长期运行版本时，建议先补部署与运行边界：
 
 - Docker / systemd / 反向代理部署
 - 配置校验与启动前检查
 - 日志、审计、监控、告警
 - 数据库备份与迁移流程
 
+### 第二优先级：权限与审计增强
+
+登录保护只是单管理员密码模型，继续生产化前还建议补：
+
+- 多管理员账号或外部身份集成
+- 细粒度 API 权限
+- 敏感操作二次确认或审计
+- CSRF 防护策略
+
 ### 第三优先级：管理页增强
 
-在认证和部署边界清楚之后，再扩展 `/admin`：
+在部署和权限边界清楚之后，再扩展 `/admin`：
 
 - 分页、搜索、排序
 - 更完整的错误提示

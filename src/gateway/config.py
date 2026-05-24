@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     rapid_copy_base_url: str = Field("http://localhost:9000")
     database_url: str = Field("sqlite:///./gateway.db")
     cookie_secret: str = Field("change-me-please")
+    admin_password: str = Field("")
+    admin_session_ttl_seconds: int = Field(86400)
     openlist_probe_path: str = Field("/Movies/sample.mkv")
     catalog_root_path: str = Field("/Movies")
     rapid_copy_donor_cookie: str = Field("")

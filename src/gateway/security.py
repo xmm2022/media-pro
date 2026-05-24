@@ -37,3 +37,25 @@ class PlaybackTokenCipher:
         if not isinstance(user_id, int) or not isinstance(media_id, int):
             raise ValueError("invalid playback token")
         return {"user_id": user_id, "media_id": media_id}
+
+
+class AdminSessionCipher:
+    def __init__(self, secret: str) -> None:
+        key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+        self._fernet = Fernet(key)
+
+    def issue(self) -> str:
+        payload = json.dumps({"role": "admin"}, separators=(",", ":"))
+        return self._fernet.encrypt(payload.encode()).decode()
+
+    def verify(self, token: str, *, ttl_seconds: int) -> None:
+        try:
+            payload = self._fernet.decrypt(token.encode(), ttl=ttl_seconds)
+        except InvalidToken as exc:
+            raise ValueError("invalid admin session") from exc
+        try:
+            data = json.loads(payload.decode())
+        except ValueError as exc:
+            raise ValueError("invalid admin session") from exc
+        if data.get("role") != "admin":
+            raise ValueError("invalid admin session")

@@ -225,6 +225,7 @@ ADMIN_HTML = """<!doctype html>
       <button class="tab" data-view="pool">Pool</button>
       <button class="tab" data-view="ops">操作</button>
     </div>
+    <button id="logout" title="退出登录" hidden>退出</button>
   </header>
   <main>
     <aside>
@@ -586,6 +587,15 @@ ADMIN_HTML = """<!doctype html>
     $('#drive-form').addEventListener('submit', (event) => handleDriveSubmit(event).catch((error) => showOutput(error.body || error.message)));
     $('#catalog-form').addEventListener('submit', (event) => handleCatalogSubmit(event).catch((error) => showOutput(error.body || error.message)));
     $('#playback-form').addEventListener('submit', (event) => handlePlaybackSubmit(event).catch((error) => showOutput(error.body || error.message)));
+    $('#logout').addEventListener('click', async () => {
+      await api('/api/admin/logout', { method: 'POST' });
+      window.location.href = '/admin/login';
+    });
+    api('/api/admin/session').then((session) => {
+      $('#logout').hidden = !session.auth_enabled;
+    }).catch(() => {
+      $('#logout').hidden = true;
+    });
     document.body.addEventListener('click', (event) => handleAction(event).catch((error) => showOutput(error.body || error.message)));
     refresh().catch((error) => {
       setStatus('初始化失败');

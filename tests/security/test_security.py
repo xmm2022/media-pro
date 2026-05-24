@@ -1,6 +1,6 @@
 import pytest
 
-from gateway.security import CookieCipher, PlaybackTokenCipher
+from gateway.security import AdminSessionCipher, CookieCipher, PlaybackTokenCipher
 
 
 def test_cookie_cipher_round_trip() -> None:
@@ -26,3 +26,19 @@ def test_playback_token_cipher_rejects_invalid_token() -> None:
 
     with pytest.raises(ValueError, match="invalid playback token"):
         cipher.verify("broken-token")
+
+
+def test_admin_session_cipher_round_trip() -> None:
+    cipher = AdminSessionCipher("x" * 32)
+
+    token = cipher.issue()
+
+    assert token
+    cipher.verify(token, ttl_seconds=3600)
+
+
+def test_admin_session_cipher_rejects_invalid_token() -> None:
+    cipher = AdminSessionCipher("x" * 32)
+
+    with pytest.raises(ValueError, match="invalid admin session"):
+        cipher.verify("broken-token", ttl_seconds=3600)
