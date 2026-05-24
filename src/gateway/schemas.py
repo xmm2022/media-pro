@@ -243,6 +243,20 @@ class PoolObjectStatsRead(BaseModel):
     cooldown_expired: int
 
 
+class TransferJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    media_id: int
+    donor_user_id: int | None
+    target_user_id: int
+    route_stage: str
+    idempotency_key: str
+    status: str
+    error_code: str | None
+    attempt_no: int
+
+
 class DriveOverviewSectionRead(BaseModel):
     stats: DriveStatsRead
     attention_total: int

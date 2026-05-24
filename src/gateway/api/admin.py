@@ -14,7 +14,15 @@ from gateway.db import get_session
 from gateway.integrations.drive115_health_client import Drive115HealthClient, DriveHealthResult
 from gateway.integrations.openlist_admin_client import OpenListAdminClient, OpenListAdminError
 from gateway.integrations.openlist_client import OpenListClient
-from gateway.models import MediaItem, PlaybackRecord, PoolObject, PoolObjectStatus, User, UserDriveAccount
+from gateway.models import (
+    MediaItem,
+    PlaybackRecord,
+    PoolObject,
+    PoolObjectStatus,
+    TransferJob,
+    User,
+    UserDriveAccount,
+)
 from gateway.schemas import (
     AdminOverviewRead,
     CatalogSyncRequest,
@@ -36,6 +44,7 @@ from gateway.schemas import (
     PoolObjectBulkActionResponse,
     PoolObjectRead,
     PoolObjectStatsRead,
+    TransferJobRead,
     UserCreate,
     UserRead,
 )
@@ -645,6 +654,32 @@ def list_pool_objects(
         )
     ).all()
     return [PoolObjectRead.model_validate(pool_object) for pool_object in pool_objects]
+
+
+@router.get("/transfer-jobs", response_model=list[TransferJobRead])
+def list_transfer_jobs(
+    media_id: int | None = None,
+    donor_user_id: int | None = None,
+    target_user_id: int | None = None,
+    route_stage: str | None = None,
+    status_name: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+) -> list[TransferJobRead]:
+    statement = select(TransferJob).order_by(TransferJob.id).offset(offset).limit(limit)
+    if media_id is not None:
+        statement = statement.where(TransferJob.media_id == media_id)
+    if donor_user_id is not None:
+        statement = statement.where(TransferJob.donor_user_id == donor_user_id)
+    if target_user_id is not None:
+        statement = statement.where(TransferJob.target_user_id == target_user_id)
+    if route_stage is not None:
+        statement = statement.where(TransferJob.route_stage == route_stage)
+    if status_name is not None:
+        statement = statement.where(TransferJob.status == status_name)
+    jobs = session.scalars(statement).all()
+    return [TransferJobRead.model_validate(job) for job in jobs]
 
 
 @router.post("/pool-objects/recover", response_model=PoolObjectBulkActionResponse)
