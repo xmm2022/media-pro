@@ -149,6 +149,33 @@ class DriveProbeBulkResponse(BaseModel):
     results: list[DriveProbeRead]
 
 
+class CredentialFieldRead(BaseModel):
+    name: str
+    label: str
+    secret: bool
+    required: bool
+    help_text: str | None = None
+
+
+class DriveTypeCapabilitiesRead(BaseModel):
+    can_stream: bool
+    can_source_copy: bool
+    can_pool_copy: bool
+    managed_by_openlist: bool
+    supports_health_probe: bool
+    supports_user_bind: bool
+
+
+class DriveTypeRead(BaseModel):
+    drive_type: str
+    label: str
+    description: str
+    credential_type: str
+    default_root_dir: str
+    capabilities: DriveTypeCapabilitiesRead
+    credential_fields: list[CredentialFieldRead]
+
+
 class CatalogSyncRequest(BaseModel):
     root_path: str | None = None
 

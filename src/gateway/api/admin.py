@@ -16,9 +16,10 @@ from gateway.integrations.openlist_admin_client import OpenListAdminClient, Open
 from gateway.integrations.openlist_client import OpenListClient
 from gateway.models import PlaybackRecord, PoolObject, PoolObjectStatus, User, UserDriveAccount
 from gateway.schemas import (
+    AdminOverviewRead,
     CatalogSyncRequest,
     CatalogSyncResponse,
-    AdminOverviewRead,
+    CredentialFieldRead,
     DriveAccountBulkActionRequest,
     DriveAccountBulkActionResponse,
     DriveAccountCreate,
@@ -28,6 +29,8 @@ from gateway.schemas import (
     DriveAccountRead,
     DriveStatsRead,
     DriveAccountUpdate,
+    DriveTypeCapabilitiesRead,
+    DriveTypeRead,
     PoolObjectBulkActionRequest,
     PoolObjectBulkActionResponse,
     PoolObjectRead,
@@ -37,6 +40,71 @@ from gateway.schemas import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+DRIVE_TYPE_CATALOG: tuple[DriveTypeRead, ...] = (
+    DriveTypeRead(
+        drive_type="115",
+        label="115",
+        description="115 专用用户云盘，保留专用 rapid-copy、池内复用和直链播放能力。",
+        credential_type="cookie",
+        default_root_dir="/EmbyCache",
+        capabilities=DriveTypeCapabilitiesRead(
+            can_stream=True,
+            can_source_copy=True,
+            can_pool_copy=True,
+            managed_by_openlist=False,
+            supports_health_probe=True,
+            supports_user_bind=True,
+        ),
+        credential_fields=[
+            CredentialFieldRead(
+                name="cookie",
+                label="115 Cookie",
+                secret=True,
+                required=True,
+                help_text="用于 115 专用链路，后端加密保存，接口不会回显明文。",
+            )
+        ],
+    ),
+    DriveTypeRead(
+        drive_type="caiyun",
+        label="移动云盘 / 139",
+        description="OpenList-backed 用户云盘，通过 OpenList storage 和 fs/copy 承接源盘复制。",
+        credential_type="openlist_storage",
+        default_root_dir="/EmbyCache",
+        capabilities=DriveTypeCapabilitiesRead(
+            can_stream=True,
+            can_source_copy=True,
+            can_pool_copy=False,
+            managed_by_openlist=True,
+            supports_health_probe=True,
+            supports_user_bind=True,
+        ),
+        credential_fields=[
+            CredentialFieldRead(
+                name="access_token",
+                label="Access Token",
+                secret=True,
+                required=True,
+                help_text="写入 OpenList 139Yun storage 的 authorization 字段。",
+            ),
+            CredentialFieldRead(
+                name="refresh_token",
+                label="Refresh Token",
+                secret=True,
+                required=False,
+                help_text="写入 OpenList 139Yun storage 的 refresh_token 字段。",
+            ),
+            CredentialFieldRead(
+                name="account_type",
+                label="账号类型",
+                secret=False,
+                required=False,
+                help_text="默认 personal_new，对应当前 OpenList 139Yun driver 配置。",
+            ),
+        ],
+    ),
+)
 
 
 @router.get("/stats")
@@ -87,6 +155,11 @@ def admin_drive_stats(session: Session = Depends(get_session)) -> DriveStatsRead
 def admin_pool_object_stats(session: Session = Depends(get_session)) -> PoolObjectStatsRead:
     pool_objects = session.scalars(select(PoolObject)).all()
     return PoolObjectStatsRead.model_validate(summarize_pool_objects(pool_objects))
+
+
+@router.get("/drive-types", response_model=list[DriveTypeRead])
+def list_drive_types() -> list[DriveTypeRead]:
+    return list(DRIVE_TYPE_CATALOG)
 
 
 def summarize_routes(routes: list[str]) -> dict[str, int]:
