@@ -10,11 +10,19 @@ def test_admin_ui_serves_minimal_management_page() -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "media-pro admin" in response.text
+    assert "media-pro 管理工作台" in response.text
+    assert 'data-testid="admin-workbench"' in response.text
+    assert 'aria-label="主导航"' in response.text
+    assert "系统概览" in response.text
+    assert "播放测试" in response.text
+    assert "运行状态" in response.text
     assert "/api/admin/overview" in response.text
     assert "/api/admin/users" in response.text
     assert "/api/admin/drives" in response.text
     assert "/api/playback/" in response.text
+    assert "/api/admin/session" in response.text
+    assert "/api/admin/logout" in response.text
+    assert 'id="logout"' in response.text
 
 
 def test_admin_auth_is_disabled_when_password_is_not_configured(tmp_path) -> None:
@@ -68,7 +76,7 @@ def test_admin_auth_protects_ui_and_api_when_password_is_configured(tmp_path) ->
     authenticated_api_response = client.get("/api/admin/users")
 
     assert authenticated_page_response.status_code == 200
-    assert "media-pro admin" in authenticated_page_response.text
+    assert "media-pro 管理工作台" in authenticated_page_response.text
     assert authenticated_api_response.status_code == 200
     assert authenticated_api_response.json() == []
 

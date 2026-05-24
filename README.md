@@ -10,7 +10,7 @@
 
 - 已经具备本地启动、接口联调、数据库持久化、基础播放决策、最小管理页和运维验证能力
 - 已经具备可选的管理员登录保护；设置 `GATEWAY_ADMIN_PASSWORD` 后会保护 `/admin` 和 `/api/admin/*`
-- 还没有多角色权限控制、真实生产部署方案和完整业务闭环
+- 还没有多角色权限控制、反向代理/监控等完整生产闭环
 - 更适合当前阶段作为技术验证版 / 联调版，而不是直接当最终生产系统
 
 ## MVP Route Order
@@ -39,7 +39,7 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 - 多角色权限控制、细粒度权限策略
 - 真实 OpenList / 115 环境下的全链路联调闭环
 - 完整的任务调度、后台 worker 运行体系
-- Docker / systemd / 反向代理等部署方案
+- 反向代理、监控、告警、限流等完整生产运行配套
 - 生产级日志、监控、告警、限流和异常恢复
 
 ## 技术栈
@@ -85,6 +85,8 @@ tests/
 ```
 
 ## 快速启动
+
+本地开发仍可直接手动启动：
 
 ```bash
 cp .env.example .env
@@ -145,6 +147,8 @@ uv run uvicorn gateway.main:app --reload
   - 默认值：`86400`
 - `GATEWAY_OPENLIST_BASE_URL`
   - OpenList 服务地址
+  - 本地部署常见端口是 `http://127.0.0.1:5246`
+  - 部分既有 OpenList 安装使用 `http://127.0.0.1:5244`，必须按实际端口配置
 - `GATEWAY_OPENLIST_TOKEN`
   - OpenList Token
 - `GATEWAY_OPENLIST_ADMIN_TOKEN`
@@ -181,6 +185,86 @@ uv run alembic upgrade head
 ```
 
 如果 `gateway.db` 还不存在，应用启动时会自动创建当前模型对应的表结构。
+
+## systemd 部署
+
+仓库提供一个最小 systemd 基线，适合把手动 `uvicorn` 过渡到可重启、可开机自启的本机服务：
+
+- service 模板：`deploy/systemd/media-pro.service`
+- 环境文件模板：`deploy/systemd/media-pro.env.example`
+
+示例以仓库路径 `/home/nax/media-pro`、监听 `127.0.0.1:8000` 为准。生产环境不要提交真实 token、cookie、密码或私有路径。
+
+### 1. 准备代码和依赖
+
+```bash
+cd /home/nax/media-pro
+uv sync
+```
+
+`deploy/systemd/media-pro.service` 默认直接执行 `/home/nax/media-pro/.venv/bin/uvicorn`，所以每次换机器或重建目录后都要先确认 `uv sync` 已生成 `.venv`。
+
+如果本机已经有手动启动的 `uvicorn` 占用 `8000`，新 service 不会自动加载新代码。需要先停止或重启旧进程，再交给 systemd 管理：
+
+```bash
+ss -ltnp 'sport = :8000'
+# 确认进程属于旧的 media-pro uvicorn 后再停止
+```
+
+### 2. 安装环境文件
+
+```bash
+sudo install -d -m 0750 /etc/media-pro
+sudo install -m 0640 deploy/systemd/media-pro.env.example /etc/media-pro/media-pro.env
+sudo editor /etc/media-pro/media-pro.env
+```
+
+至少检查这些值：
+
+- `GATEWAY_DATABASE_URL`：示例为 `sqlite:////home/nax/media-pro/gateway.db`
+- `GATEWAY_COOKIE_SECRET`：替换成随机长字符串
+- `GATEWAY_ADMIN_PASSWORD`：设置后 `/admin` 和 `/api/admin/*` 会启用登录保护；留空只适合本地可信联调
+- `GATEWAY_OPENLIST_BASE_URL`：按实际 OpenList 端口设置，常见是 `http://127.0.0.1:5246`，旧安装也可能是 `http://127.0.0.1:5244`
+- `GATEWAY_OPENLIST_TOKEN` / `GATEWAY_OPENLIST_ADMIN_TOKEN`：按当前 OpenList 配置填写
+
+### 3. 迁移数据库
+
+已有 SQLite 数据库时，先备份再迁移：
+
+```bash
+cd /home/nax/media-pro
+cp gateway.db gateway.db.bak-$(date +%Y%m%d%H%M%S)
+uv run alembic upgrade head
+```
+
+新库可以直接启动，应用会按当前模型创建表；需要严格迁移流程时也可以先运行 `uv run alembic upgrade head`。
+
+### 4. 安装并启动 service
+
+```bash
+sudo install -m 0644 deploy/systemd/media-pro.service /etc/systemd/system/media-pro.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now media-pro.service
+sudo systemctl status media-pro.service
+```
+
+升级代码、修改 Python 代码或修改 `/etc/media-pro/media-pro.env` 后，都需要重启 service 才会生效：
+
+```bash
+cd /home/nax/media-pro
+uv sync
+uv run alembic upgrade head
+sudo systemctl restart media-pro.service
+curl -fsS http://127.0.0.1:8000/health
+```
+
+常用运维命令：
+
+```bash
+sudo journalctl -u media-pro.service -f
+sudo systemctl restart media-pro.service
+sudo systemctl stop media-pro.service
+```
 
 ## 当前接口说明
 
