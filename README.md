@@ -1,17 +1,20 @@
-# GD Source-First Playback Gateway
+# media-pro
 
-一个面向 Emby / 媒体网关场景的后端 MVP。当前项目以 FastAPI 为核心，目标是围绕 `GD / OpenList` 媒体源、用户贡献的 `115` 账号池，以及“优先本地命中、其次池内复用、最后回源”的播放决策链路，先搭出一个可运行、可联调、可继续扩展的服务骨架。
+一个面向 Emby / Jellyfin 的 NextEmby-like 泛云盘媒体缓存与播放网关。
+
+`media-pro` 的目标不是做单一云盘脚本，也不是 115 专用工具，而是把媒体源、用户云盘、缓存池和播放诊断整合成一个小团队可用的正式产品。管理员配置 OpenList / GD 等媒体源和用户策略，用户绑定自己的云盘账号；播放时系统按 `self -> pool -> source_copy -> source_stream` 决策，优先使用用户已有缓存，其次复用池内缓存，再尝试从媒体源复制到用户云盘，最后回源直连播放。
+
+当前代码基于 FastAPI、SQLAlchemy、SQLite、OpenList、rapid-copy 和可扩展 provider 策略构建。已有能力覆盖 115、139/caiyun、OpenList/GD 媒体源、基础管理后台、管理员登录保护、systemd 部署和测试集。后续方向是继续模仿 NextEmby 的产品体验，但保持 clean-room 实现，不复制 `/root/nextemby` 的私有/反编译源码。
 
 ## 当前阶段
 
-当前仓库包含后端 API、数据模型、验证脚本、测试集，以及一个内置的最小管理页。
-
-可以把它理解为：
+当前仓库处于 NextEmby-like 泛云盘产品化的基础阶段：
 
 - 已经具备本地启动、接口联调、数据库持久化、基础播放决策、最小管理页和运维验证能力
 - 已经具备可选的管理员登录保护；设置 `GATEWAY_ADMIN_PASSWORD` 后会保护 `/admin` 和 `/api/admin/*`
-- 还没有多角色权限控制、反向代理/监控等完整生产闭环
-- 更适合当前阶段作为技术验证版 / 联调版，而不是直接当最终生产系统
+- 已经具备 115 专用链路和 139/caiyun OpenList-backed 链路的基础实现
+- 正在补齐 provider 能力描述、播放诊断、转存历史、媒体列表、正式管理后台和用户中心
+- 更适合当前阶段作为自用/小团队技术产品，而不是公开运营系统
 
 ## MVP Route Order
 
@@ -21,6 +24,8 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 
 - FastAPI 应用骨架与 `/health` 健康检查
 - OpenList 与 rapid-copy 适配器契约及基础验证脚本
+- provider strategy registry 基础结构
+- 139/caiyun OpenList-backed drive 录入、probe、source_copy 基础能力
 - SQLAlchemy 模型、Alembic 迁移、SQLite 持久化
 - Drive cookie 加密存储
 - 管理员用户与 drive 录入接口
@@ -33,14 +38,17 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 - 可选管理员登录、session cookie 鉴权与退出登录
 - worker cooldown 恢复 helper
 - 本地 smoke 校验脚本与完整测试集
+- systemd 部署模板和部署说明
 
 ## 当前还没有实现
 
+- 用户中心、用户登录和用户自助绑定云盘
+- 正式产品级管理后台
+- provider capability API 与播放/转存诊断读模型
 - 多角色权限控制、细粒度权限策略
 - 真实 OpenList / 115 环境下的全链路联调闭环
 - 完整的任务调度、后台 worker 运行体系
 - 反向代理、监控、告警、限流等完整生产运行配套
-- 生产级日志、监控、告警、限流和异常恢复
 
 ## 技术栈
 
