@@ -38,7 +38,7 @@ def test_admin_auth_is_disabled_when_password_is_not_configured(tmp_path) -> Non
     assert api_response.status_code == 200
     assert api_response.json() == []
     assert session_response.status_code == 200
-    assert session_response.json() == {"auth_enabled": False}
+    assert session_response.json() == {"auth_enabled": False, "authenticated": False}
 
 
 def test_admin_auth_protects_ui_and_api_when_password_is_configured(tmp_path) -> None:
@@ -65,7 +65,7 @@ def test_admin_auth_protects_ui_and_api_when_password_is_configured(tmp_path) ->
     assert login_page_response.status_code == 200
     assert "media-pro admin login" in login_page_response.text
     assert session_response.status_code == 200
-    assert session_response.json() == {"auth_enabled": True}
+    assert session_response.json() == {"auth_enabled": True, "authenticated": False}
     assert bad_login_response.status_code == 401
     assert login_response.status_code == 200
     assert login_response.json() == {"ok": True, "auth_enabled": True}

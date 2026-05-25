@@ -135,7 +135,13 @@ async def admin_login(request: Request) -> JSONResponse:
 
 @router.get("/api/admin/session")
 def admin_session(request: Request) -> JSONResponse:
-    return JSONResponse({"auth_enabled": bool(getattr(request.app.state, "admin_password", ""))})
+    auth_enabled = bool(getattr(request.app.state, "admin_password", ""))
+    if not auth_enabled:
+        authenticated = False
+    else:
+        token = request.cookies.get(ADMIN_SESSION_COOKIE)
+        authenticated = bool(token) and admin_session_is_valid(request, token)
+    return JSONResponse({"auth_enabled": auth_enabled, "authenticated": authenticated})
 
 
 @router.post("/api/admin/logout")
