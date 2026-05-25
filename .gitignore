@@ -5,3 +5,7 @@ __pycache__/
 gateway.db
 HANDOFF.md
 .superpowers/
+web/node_modules
+web/dist
+web/.vite
+web/coverage
