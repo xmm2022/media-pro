@@ -48,7 +48,7 @@ Excluded from this plan:
 - Modify: `README.md`
 - Test: shell checks only
 
-- [ ] **Step 1: Write the documentation expectation check**
+- [x] **Step 1: Write the documentation expectation check**
 
 Run:
 
@@ -58,7 +58,7 @@ rg -n "泛云盘媒体缓存|NextEmby-like|GD Source-First Playback Gateway" REA
 
 Expected before implementation: the command finds `GD Source-First Playback Gateway` and does not find the new positioning phrases.
 
-- [ ] **Step 2: Replace the README title and first product section**
+- [x] **Step 2: Replace the README title and first product section**
 
 In `README.md`, replace the title and opening paragraphs through the `## 当前阶段` heading body with this content:
 
@@ -84,7 +84,7 @@ In `README.md`, replace the title and opening paragraphs through the `## 当前�
 
 Keep the existing `## MVP Route Order` section after this replacement.
 
-- [ ] **Step 3: Update the implemented/missing capability bullets**
+- [x] **Step 3: Update the implemented/missing capability bullets**
 
 In `README.md`, under `## 当前已经实现`, ensure the list includes these bullets:
 
@@ -104,7 +104,7 @@ Under `## 当前还没有实现`, ensure the list includes:
 
 Remove duplicated bullets about production logging/monitoring if they appear twice.
 
-- [ ] **Step 4: Verify README positioning**
+- [x] **Step 4: Verify README positioning**
 
 Run:
 
@@ -114,7 +114,7 @@ rg -n "NextEmby-like|泛云盘|GD Source-First Playback Gateway" README.md
 
 Expected: output includes `NextEmby-like` and `泛云盘`; output no longer includes `# GD Source-First Playback Gateway`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md
@@ -130,7 +130,7 @@ git commit -m "docs: update product positioning"
 - Modify: `src/gateway/api/admin.py`
 - Create: `tests/api/test_admin_drive_types.py`
 
-- [ ] **Step 1: Write the failing API test**
+- [x] **Step 1: Write the failing API test**
 
 Create `tests/api/test_admin_drive_types.py`:
 
@@ -222,7 +222,7 @@ def test_admin_drive_types_endpoint_returns_provider_capabilities(tmp_path: Path
     ]
 ```
 
-- [ ] **Step 2: Run the failing test**
+- [x] **Step 2: Run the failing test**
 
 Run:
 
@@ -232,7 +232,7 @@ uv run pytest tests/api/test_admin_drive_types.py -q
 
 Expected: FAIL with `404 Not Found` for `/api/admin/drive-types`.
 
-- [ ] **Step 3: Add capability response schemas**
+- [x] **Step 3: Add capability response schemas**
 
 In `src/gateway/schemas.py`, after `DriveProbeBulkResponse`, add:
 
@@ -264,7 +264,7 @@ class DriveTypeRead(BaseModel):
     credential_fields: list[CredentialFieldRead]
 ```
 
-- [ ] **Step 4: Add the drive type catalog and endpoint**
+- [x] **Step 4: Add the drive type catalog and endpoint**
 
 In `src/gateway/api/admin.py`, extend the schema imports:
 
@@ -371,7 +371,7 @@ def list_drive_types() -> list[DriveTypeRead]:
     return list(DRIVE_TYPE_CATALOG)
 ```
 
-- [ ] **Step 5: Run the focused test**
+- [x] **Step 5: Run the focused test**
 
 Run:
 
@@ -381,7 +381,7 @@ uv run pytest tests/api/test_admin_drive_types.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/gateway/schemas.py src/gateway/api/admin.py tests/api/test_admin_drive_types.py
@@ -397,7 +397,7 @@ git commit -m "feat: expose drive type capabilities"
 - Modify: `src/gateway/api/admin.py`
 - Create: `tests/api/test_admin_media_items.py`
 
-- [ ] **Step 1: Write the failing API test**
+- [x] **Step 1: Write the failing API test**
 
 Create `tests/api/test_admin_media_items.py`:
 
@@ -488,7 +488,7 @@ def test_admin_media_items_endpoint_lists_and_filters_catalog(tmp_path: Path) ->
     assert [item["id"] for item in limited.json()] == [2]
 ```
 
-- [ ] **Step 2: Run the failing test**
+- [x] **Step 2: Run the failing test**
 
 Run:
 
@@ -498,7 +498,7 @@ uv run pytest tests/api/test_admin_media_items.py -q
 
 Expected: FAIL with `404 Not Found` for `/api/admin/media-items`.
 
-- [ ] **Step 3: Add the media item response schema**
+- [x] **Step 3: Add the media item response schema**
 
 In `src/gateway/schemas.py`, after `CatalogSyncResponse`, add:
 
@@ -515,7 +515,7 @@ class MediaItemRead(BaseModel):
     openlist_path: str
 ```
 
-- [ ] **Step 4: Add the endpoint**
+- [x] **Step 4: Add the endpoint**
 
 In `src/gateway/api/admin.py`, add `MediaItem` to the model imports:
 
@@ -545,7 +545,7 @@ def list_media_items(
     return [MediaItemRead.model_validate(media_item) for media_item in media_items]
 ```
 
-- [ ] **Step 5: Run focused and nearby tests**
+- [x] **Step 5: Run focused and nearby tests**
 
 Run:
 
@@ -555,7 +555,7 @@ uv run pytest tests/api/test_admin_media_items.py tests/api/test_admin_catalog_s
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/gateway/schemas.py src/gateway/api/admin.py tests/api/test_admin_media_items.py
@@ -571,7 +571,7 @@ git commit -m "feat: add admin media item listing"
 - Modify: `src/gateway/api/admin.py`
 - Create: `tests/api/test_admin_transfer_jobs.py`
 
-- [ ] **Step 1: Write the failing API test**
+- [x] **Step 1: Write the failing API test**
 
 Create `tests/api/test_admin_transfer_jobs.py`:
 
@@ -707,7 +707,7 @@ def test_admin_transfer_jobs_endpoint_lists_and_filters_attempts(tmp_path: Path)
     assert [item["id"] for item in limited.json()] == [2]
 ```
 
-- [ ] **Step 2: Run the failing test**
+- [x] **Step 2: Run the failing test**
 
 Run:
 
@@ -717,7 +717,7 @@ uv run pytest tests/api/test_admin_transfer_jobs.py -q
 
 Expected: FAIL with `404 Not Found` for `/api/admin/transfer-jobs`.
 
-- [ ] **Step 3: Add the transfer job response schema**
+- [x] **Step 3: Add the transfer job response schema**
 
 In `src/gateway/schemas.py`, after `PoolObjectStatsRead`, add:
 
@@ -736,7 +736,7 @@ class TransferJobRead(BaseModel):
     attempt_no: int
 ```
 
-- [ ] **Step 4: Add the endpoint**
+- [x] **Step 4: Add the endpoint**
 
 In `src/gateway/api/admin.py`, add `TransferJob` to the model imports and `TransferJobRead` to schema imports.
 
@@ -769,7 +769,7 @@ def list_transfer_jobs(
     return [TransferJobRead.model_validate(job) for job in jobs]
 ```
 
-- [ ] **Step 5: Run focused and nearby tests**
+- [x] **Step 5: Run focused and nearby tests**
 
 Run:
 
@@ -779,7 +779,7 @@ uv run pytest tests/api/test_admin_transfer_jobs.py tests/api/test_admin_overvie
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/gateway/schemas.py src/gateway/api/admin.py tests/api/test_admin_transfer_jobs.py
@@ -795,7 +795,7 @@ git commit -m "feat: add admin transfer job listing"
 - Modify: `src/gateway/api/admin.py`
 - Create: `tests/api/test_admin_playback_records.py`
 
-- [ ] **Step 1: Write the failing API test**
+- [x] **Step 1: Write the failing API test**
 
 Create `tests/api/test_admin_playback_records.py`:
 
@@ -916,7 +916,7 @@ def test_admin_playback_records_endpoint_lists_and_filters_routes(tmp_path: Path
     assert [item["id"] for item in limited.json()] == [2]
 ```
 
-- [ ] **Step 2: Run the failing test**
+- [x] **Step 2: Run the failing test**
 
 Run:
 
@@ -926,7 +926,7 @@ uv run pytest tests/api/test_admin_playback_records.py -q
 
 Expected: FAIL with `404 Not Found` for `/api/admin/playback-records`.
 
-- [ ] **Step 3: Add the playback record response schema**
+- [x] **Step 3: Add the playback record response schema**
 
 In `src/gateway/schemas.py`, after `TransferJobRead`, add:
 
@@ -942,7 +942,7 @@ class PlaybackRecordRead(BaseModel):
     latency_ms: int
 ```
 
-- [ ] **Step 4: Add the endpoint**
+- [x] **Step 4: Add the endpoint**
 
 In `src/gateway/api/admin.py`, add `TransferRoute` to model imports and `PlaybackRecordRead` to schema imports.
 
@@ -984,7 +984,7 @@ and import `TransferRoute` in `schemas.py`:
 from gateway.models import PoolObjectStatus, TransferRoute
 ```
 
-- [ ] **Step 5: Run focused and nearby tests**
+- [x] **Step 5: Run focused and nearby tests**
 
 Run:
 
@@ -994,7 +994,7 @@ uv run pytest tests/api/test_admin_playback_records.py tests/api/test_admin_stat
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/gateway/schemas.py src/gateway/api/admin.py tests/api/test_admin_playback_records.py
@@ -1008,7 +1008,7 @@ git commit -m "feat: add admin playback record listing"
 **Files:**
 - No source edits expected
 
-- [ ] **Step 1: Run focused API suite**
+- [x] **Step 1: Run focused API suite**
 
 Run:
 
@@ -1018,7 +1018,7 @@ uv run pytest tests/api -q
 
 Expected: all API tests pass.
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run:
 
@@ -1028,7 +1028,7 @@ uv run pytest
 
 Expected: full suite passes.
 
-- [ ] **Step 3: Check branch state**
+- [x] **Step 3: Check branch state**
 
 Run:
 
@@ -1038,7 +1038,7 @@ git status --short --branch
 
 Expected: clean working tree, branch ahead by the number of commits created from this plan.
 
-- [ ] **Step 4: Record implementation outcome**
+- [x] **Step 4: Record implementation outcome**
 
 Add a short note to the final response with:
 
