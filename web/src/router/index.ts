@@ -23,7 +23,11 @@ const routes: RouteRecordRaw[] = [
 ];
 
 export const router = createRouter({
-  history: createWebHistory(),
+  // Routes are written with the absolute `/admin/...` prefix, so override the
+  // Vue Router base (which would otherwise inherit Vite's `base: '/admin/'`)
+  // back to `/`. Assets still load from `/admin/assets/...` because that is
+  // a Vite-build concern, separate from the router's path matching.
+  history: createWebHistory('/'),
   routes,
 });
 
