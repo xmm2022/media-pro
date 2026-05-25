@@ -11,10 +11,18 @@
 当前仓库处于 NextEmby-like 泛云盘产品化的基础阶段：
 
 - 已经具备本地启动、接口联调、数据库持久化、基础播放决策、最小管理页和运维验证能力
+- 已经具备 Vue 3 + Naive UI 的正式管理后台（侧边栏分组 / 运营、数据、诊断），覆盖 overview、users、drives、pool、media-items、transfer-jobs、playback-records 7 个视图
 - 已经具备可选的管理员登录保护；设置 `GATEWAY_ADMIN_PASSWORD` 后会保护 `/admin` 和 `/api/admin/*`
 - 已经具备 115 专用链路和 139/caiyun OpenList-backed 链路的基础实现
 - 正在补齐 provider 能力描述、播放诊断、转存历史、媒体列表、正式管理后台和用户中心
 - 更适合当前阶段作为自用/小团队技术产品，而不是公开运营系统
+
+## 前端开发约定
+
+- 前端代码在 `web/`，Vue 3 + Vite + Naive UI + TypeScript，包管理用 pnpm。
+- 本地开发同时跑两个进程：`uvicorn gateway.main:app --reload --port 8000` 和 `cd web && pnpm dev`。Vite 把 `/api/*` 代理到 `:8000`。
+- 部署前需执行 `cd web && pnpm install && pnpm build` 生成 `web/dist/`，FastAPI 会从该目录挂载 `/admin/assets` 并对其它 `/admin/*` 路径返回 `index.html`。
+- TS 类型在 `web/src/api/types.ts` 中手动镜像 `src/gateway/schemas.py`；改后端字段时同步更新前端。
 
 ## MVP Route Order
 

@@ -1,9 +1,11 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from threading import Lock
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from gateway.api.admin import router as admin_router
 from gateway.api.admin_auth import (
@@ -11,12 +13,14 @@ from gateway.api.admin_auth import (
     admin_session_is_valid,
     router as admin_auth_router,
 )
-from gateway.api.admin_ui import router as admin_ui_router
 from gateway.api.health import router as health_router
 from gateway.api.playback import router as playback_router
 from gateway.config import settings
 from gateway.db import init_schema, make_engine, make_session_factory
 from gateway.security import AdminSessionCipher, CookieCipher, PlaybackTokenCipher
+
+
+ADMIN_DIST = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
 
 
 def create_app(
@@ -51,8 +55,6 @@ def create_app(
         if _admin_auth_is_required(request):
             token = request.cookies.get(ADMIN_SESSION_COOKIE)
             if not token or not admin_session_is_valid(request, token):
-                if request.url.path == "/admin":
-                    return RedirectResponse("/admin/login", status_code=303)
                 return JSONResponse(
                     {"detail": "admin authentication required"},
                     status_code=401,
@@ -61,19 +63,39 @@ def create_app(
 
     app.include_router(health_router)
     app.include_router(admin_auth_router)
-    app.include_router(admin_ui_router)
     app.include_router(admin_router)
     app.include_router(playback_router)
+
+    app.mount(
+        "/admin/assets",
+        StaticFiles(directory=ADMIN_DIST / "assets"),
+        name="admin-assets",
+    )
+
+    @app.get("/admin", include_in_schema=False)
+    @app.get("/admin/{path:path}", include_in_schema=False)
+    def admin_spa(path: str = "") -> FileResponse:
+        return FileResponse(ADMIN_DIST / "index.html")
+
     return app
 
 
 def _admin_auth_is_required(request: Request) -> bool:
     if not getattr(request.app.state, "admin_password", ""):
         return False
-    path = request.url.path
-    if path in {"/admin/login", "/api/admin/login", "/api/admin/logout", "/api/admin/session"}:
+    return _is_protected_path(request.url.path)
+
+
+def _is_protected_path(path: str) -> bool:
+    # /api/admin/* still goes through the admin auth dependency,
+    # except for the login/logout/session endpoints handled directly.
+    if path in {"/api/admin/login", "/api/admin/logout", "/api/admin/session"}:
         return False
-    return path == "/admin" or path.startswith("/api/admin/")
+    if path.startswith("/api/admin/"):
+        return True
+    # /admin and /admin/* are now served by the SPA shell (static index.html);
+    # client-side guard handles auth.
+    return False
 
 
 app = create_app()
