@@ -107,6 +107,7 @@ Expected: prints a version (e.g. `9.x` or `10.x`). If not installed, install via
     "naive-ui": "^2.41.0"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "@vitejs/plugin-vue": "^5.2.0",
     "@vue/test-utils": "^2.4.0",
     "happy-dom": "^16.0.0",
@@ -511,12 +512,14 @@ describe('apiGet', () => {
   });
 
   it('throws ApiError on non-2xx with parsed body', async () => {
-    mockFetchOnce(
+    const errorResponse = () =>
       new Response(JSON.stringify({ detail: 'nope' }), {
         status: 400,
         headers: { 'content-type': 'application/json' },
-      }),
-    );
+      });
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(errorResponse())
+      .mockResolvedValueOnce(errorResponse());
 
     await expect(apiGet('/admin/users')).rejects.toMatchObject({
       status: 400,
@@ -1459,7 +1462,7 @@ Expected: fails because component is missing.
 - [ ] **Step 3: Create `web/src/components/ResourceTable.vue`**
 
 ```vue
-<script setup lang="ts" generic="Row extends Record<string, unknown>">
+<script setup lang="ts" generic="Row extends Record<string, any> = Record<string, any>">
 import { computed } from 'vue';
 import { NDataTable, NAlert, NEmpty, NSpin } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
@@ -1467,7 +1470,9 @@ import type { DataTableColumns } from 'naive-ui';
 interface Props {
   columns: DataTableColumns<Row>;
   rows: readonly Row[];
-  rowKey: (row: Row) => string | number;
+  // Typed as `any` so callers from contexts that can't infer `Row` (e.g. test-utils `mount()`)
+  // still type-check, while `Row` is preserved for `columns`/`rows`.
+  rowKey: (row: any) => string | number;
   loading?: boolean;
   error?: Error | null;
   emptyText?: string;
