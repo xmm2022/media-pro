@@ -405,18 +405,48 @@ def admin_session(request: Request) -> JSONResponse:
 
 Expected: 4 passed.
 
-- [ ] **Step 5: Run nearby tests to confirm no regression**
+- [ ] **Step 5: Relax strict-equality assertions in `tests/api/test_admin_ui.py`**
+
+The existing `test_admin_ui.py` asserts the exact dict shape returned by `/api/admin/session`. After Step 3 added the `authenticated` key, those assertions break. Update two lines in `tests/api/test_admin_ui.py`:
+
+Replace:
+
+```python
+assert session_response.json() == {"auth_enabled": False}
+```
+
+with:
+
+```python
+assert session_response.json()["auth_enabled"] is False
+```
+
+And replace:
+
+```python
+assert session_response.json() == {"auth_enabled": True}
+```
+
+with:
+
+```python
+assert session_response.json()["auth_enabled"] is True
+```
+
+Do NOT touch `assert login_response.json() == {"ok": True, "auth_enabled": True}` — that comes from `POST /api/admin/login`, which this task does not change.
+
+- [ ] **Step 6: Run nearby tests to confirm no regression**
 
 ```bash
 .venv/bin/pytest tests/api/test_admin_ui.py tests/api/test_admin_session.py -q
 ```
 
-Expected: all pass (existing `test_admin_ui.py` tests still consume `auth_enabled` and tolerate the extra key).
+Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add tests/api/test_admin_session.py src/gateway/api/admin_auth.py
+git add tests/api/test_admin_session.py tests/api/test_admin_ui.py src/gateway/api/admin_auth.py
 git commit -m "feat: report authenticated state from admin session endpoint"
 ```
 
