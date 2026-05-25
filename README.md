@@ -43,7 +43,7 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 - 播放预算控制
 - 管理员 stats 持久化查询
 - provider capability API 与媒体/播放/转存诊断读 API
-- 内置 `/admin` 最小管理页
+- Vue 3 + Naive UI 管理后台（侧边栏分组：运营 / 数据 / 诊断；7 个视图），位于 web/，部署前需 pnpm build
 - 可选管理员登录、session cookie 鉴权与退出登录
 - worker cooldown 恢复 helper
 - 本地 smoke 校验脚本与完整测试集
@@ -76,7 +76,6 @@ The playback decision order is `self -> pool -> source_copy -> source_stream`.
 src/gateway/
   api/                   HTTP 接口
   api/admin_auth.py       可选管理员登录保护
-  api/admin_ui.py         内置最小管理页
   integrations/          OpenList / rapid-copy 适配器
   models.py              数据模型
   db.py                  数据库与 session 管理
@@ -933,7 +932,7 @@ uv run python scripts/validate_caiyun_source_copy.py
 
 ## 下一阶段建议
 
-最小管理页已经内置在 `/admin`。下一阶段建议按下面顺序推进：
+管理后台已迁移到 `web/`（Vue 3 + Naive UI），通过 `/admin` 提供 SPA。下一阶段建议按下面顺序推进：
 
 ### 第一优先级：生产化部署
 
@@ -952,15 +951,6 @@ uv run python scripts/validate_caiyun_source_copy.py
 - 细粒度 API 权限
 - 敏感操作二次确认或审计
 - CSRF 防护策略
-
-### 第三优先级：管理页增强
-
-在部署和权限边界清楚之后，再扩展 `/admin`：
-
-- 分页、搜索、排序
-- 更完整的错误提示
-- 批量操作确认
-- 播放记录和 transfer job 页面
 
 ## 当前结论
 
